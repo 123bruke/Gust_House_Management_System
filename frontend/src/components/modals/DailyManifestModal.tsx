@@ -1,0 +1,1235 @@
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import {
+  Printer,
+  Calendar,
+  Users,
+  CheckCircle2,
+  LogOut,
+  Clock,
+  Search,
+  RefreshCw,
+  Sparkles,
+  CreditCard,
+  Building,
+  Phone,
+  FileSpreadsheet,
+  BedDouble,
+} from '../common/MaterialIcon'
+import { Modal } from '../common/Modal'
+import { Button } from '../common/Button'
+import { getDailyManifest } from '../../api/reports'
+import type { DailyManifestReport, DailyManifestItem } from '../../types/api'
+import { useAuth } from '../../hooks/useAuth'
+import { useI18n } from '../../i18n'
+
+interface DailyManifestModalProps {
+  isOpen: boolean
+  onClose: () => void
+  initialDate?: string
+}
+
+type FilterActivity = 'ALL' | 'CHECKED_IN' | 'CHECKED_OUT' | 'OCCUPIED' | 'RESERVED'
+
+export function DailyManifestModal({
+  isOpen,
+  onClose,
+  initialDate,
+}: DailyManifestModalProps) {
+  const { t, formatDate, formatMoney, currency, lang } = useI18n()
+  const { user } = useAuth()
+  const isReception = user?.role === 'RECEPTION'
+  const [manifestType, setManifestType] = useState<'STANDARD' | 'FINANCIAL'>('STANDARD')
+  const effectiveType = isReception ? 'STANDARD' : manifestType
+  const showFinancials = effectiveType === 'FINANCIAL'
+
+  const [targetDate, setTargetDate] = useState<string>(() => {
+    return initialDate || new Date().toISOString().slice(0, 10)
+  })
+  const [report, setReport] = useState<DailyManifestReport | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activityFilter, setActivityFilter] = useState<FilterActivity>('ALL')
+
+  const fetchManifest = useCallback(async (dateToFetch: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await getDailyManifest(dateToFetch)
+      setReport(data)
+    } catch (err: unknown) {
+      console.error('Failed to load daily manifest:', err)
+      setError(t('manifest.errLoad'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchManifest(targetDate)
+    }
+  }, [isOpen, targetDate, fetchManifest])
+
+  const filteredItems = useMemo(() => {
+    if (!report) return []
+    return report.items.filter((item) => {
+      // Activity filter
+      if (activityFilter !== 'ALL' && item.activity_type !== activityFilter) {
+        return false
+      }
+      // Search query
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim()
+        const nameMatch = item.guest_name.toLowerCase().includes(query)
+        const phoneMatch = item.guest_phone.toLowerCase().includes(query)
+        const roomMatch = item.room_number.toLowerCase().includes(query)
+        const idMatch = (item.guest_id_number || '').toLowerCase().includes(query)
+        return nameMatch || phoneMatch || roomMatch || idMatch
+      }
+      return true
+    })
+  }, [report, activityFilter, searchQuery])
+
+  const formatCurrency = (val: string | number) => {
+    const num = typeof val === 'string' ? parseFloat(val) : val
+    return formatMoney(num || 0)
+  }
+
+  const formatDateTime = (dtStr?: string | null) => {
+    if (!dtStr) return '—'
+    try {
+      const d = new Date(dtStr)
+      return d.toLocaleTimeString(lang === 'am' ? 'am-ET' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    } catch {
+      return dtStr
+    }
+  }
+
+  const formatDateLabel = (dtStr?: string | null) => {
+    if (!dtStr) return '—'
+    return formatDate(dtStr, 'monthDay') || dtStr
+  }
+
+  const handlePrint = () => {
+    const isStandard = effectiveType === 'STANDARD'
+    const totalExpected = filteredItems.reduce(
+      (sum, item) => sum + (parseFloat(String(item.expected_amount)) || 0),
+      0
+    )
+    const totalPaid = filteredItems.reduce(
+      (sum, item) => sum + (parseFloat(String(item.amount_paid)) || 0),
+      0
+    )
+
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = 'none'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentWindow?.document
+    if (!doc) {
+      window.print()
+      return
+    }
+
+    const rowsHtml = filteredItems
+      .map((item, idx) => {
+        let badgeColor = '#065f46'
+        let badgeBg = '#ecfdf5'
+        let badgeBorder = '#a7f3d0'
+        let badgeText = t('manifest.checkedIn')
+
+        if (item.activity_type === 'CHECKED_OUT') {
+          badgeColor = '#1e40af'
+          badgeBg = '#eff6ff'
+          badgeBorder = '#bfdbfe'
+          badgeText = t('manifest.checkedOut')
+        } else if (item.activity_type === 'OCCUPIED') {
+          badgeColor = '#6b21a8'
+          badgeBg = '#faf5ff'
+          badgeBorder = '#e9d5ff'
+          badgeText = t('manifest.inHouse')
+        } else if (item.activity_type === 'RESERVED') {
+          badgeColor = '#92400e'
+          badgeBg = '#fffbeb'
+          badgeBorder = '#fde68a'
+          badgeText = t('manifest.reserved')
+        }
+
+        const paidNum = parseFloat(String(item.amount_paid)) || 0
+
+        if (isStandard) {
+          return `
+            <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 1 ? 'background-color: #f9fafb;' : 'background-color: #ffffff;'}">
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: middle; text-align: center; font-weight: 700; color: #4b5563;">
+                ${idx + 1}
+              </td>
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: middle;">
+                <span style="display: inline-block; padding: 2px 7px; border-radius: 9999px; font-weight: 700; font-size: 9px; letter-spacing: 0.5px; color: ${badgeColor}; background: ${badgeBg}; border: 1px solid ${badgeBorder};">
+                  ${badgeText}
+                </span>
+              </td>
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: top;">
+                <div style="font-weight: 800; color: #111827; font-size: 12px;">${item.guest_name}</div>
+                <div style="color: #4b5563; font-size: 10px; margin-top: 2px;">
+                  ${t('manifest.tel')} ${item.guest_phone || '—'}
+                </div>
+              </td>
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: top; font-weight: 600; color: #111827;">
+                ${item.guest_id_number ? `<span style="font-family: monospace; font-size: 11px; font-weight: 700;">${item.guest_id_number}</span>` : `<span style="color: #9ca3af; font-style: italic; font-size: 10px;">${t('manifest.notProvided')}</span>`}
+              </td>
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: top;">
+                <div style="font-weight: 800; color: #111827;">${t('common.roomWithNumber', { number: item.room_number })}</div>
+                <div style="color: #6b7280; font-size: 10px;">${item.room_type || t('manifest.roomTypeStandard')}</div>
+              </td>
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: top;">
+                <div style="font-weight: 600; color: #111827;">${formatDateLabel(item.check_in_date)}</div>
+                <div style="color: #6b7280; font-size: 9px;">${formatDateTime(item.check_in_date)}</div>
+              </td>
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: top;">
+                <div style="font-weight: 600; color: #111827;">${formatDateLabel(item.checkout_date)}</div>
+                <div style="color: #6b7280; font-size: 9px;">${formatDateTime(item.checkout_date)}</div>
+              </td>
+              <td style="padding: 7px 8px; font-size: 11px; vertical-align: top; text-align: center; font-weight: 800; color: #111827;">
+                ${item.days_count} ${item.days_count === 1 ? t('common.night') : t('common.nights')}
+              </td>
+              <td style="padding: 7px 8px; font-size: 10px; vertical-align: top; color: #4b5563;">
+                <div style="font-weight: 700; text-transform: uppercase;">${item.status}</div>
+                ${item.notes ? `<div style="color: #6b7280; font-style: italic; font-size: 9px; margin-top: 1px;">${item.notes}</div>` : ''}
+              </td>
+            </tr>
+          `
+        }
+
+        return `
+          <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 1 ? 'background-color: #f9fafb;' : 'background-color: #ffffff;'}">
+            <td style="padding: 8px 10px; font-size: 11px; vertical-align: top;">
+              <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 9px; letter-spacing: 0.5px; color: ${badgeColor}; background: ${badgeBg}; border: 1px solid ${badgeBorder};">
+                ${badgeText}
+              </span>
+            </td>
+            <td style="padding: 8px 10px; font-size: 11px; vertical-align: top;">
+              <div style="font-weight: 700; color: #111827; font-size: 12px;">${item.guest_name}</div>
+              <div style="color: #4b5563; font-size: 10px; margin-top: 2px;">
+                ${t('manifest.tel')} ${item.guest_phone}${item.guest_id_number ? ' &bull; ' + t('manifest.idPrefix') + ' ' + item.guest_id_number : ''}
+              </div>
+            </td>
+            <td style="padding: 8px 10px; font-size: 11px; vertical-align: top;">
+              <div style="font-weight: 700; color: #111827;">${t('common.roomWithNumber', { number: item.room_number })}</div>
+              <div style="color: #6b7280; font-size: 10px;">${item.room_type || t('manifest.roomTypeStandard')}</div>
+            </td>
+            <td style="padding: 8px 10px; font-size: 11px; vertical-align: top;">
+              <div style="font-weight: 600; color: #111827;">${item.days_count} ${item.days_count === 1 ? t('manifest.dayNightUnit') : t('manifest.daysNightsUnit')}</div>
+              <div style="color: #6b7280; font-size: 10px; margin-top: 1px;">
+                ${formatDateLabel(item.check_in_date)} &rarr; ${formatDateLabel(item.checkout_date)}
+              </div>
+            </td>
+            <td style="padding: 8px 10px; font-size: 11px; text-align: right; vertical-align: top; font-weight: 700; font-family: monospace; color: ${paidNum > 0 ? '#065f46' : '#9ca3af'};">
+              ${formatCurrency(item.amount_paid)}
+            </td>
+            <td style="padding: 8px 10px; font-size: 11px; text-align: right; vertical-align: top; font-weight: 700; font-family: monospace; color: #111827;">
+              ${formatCurrency(item.expected_amount)}
+            </td>
+            <td style="padding: 8px 10px; font-size: 10px; vertical-align: top; color: #4b5563;">
+              <div style="font-weight: 600; text-transform: uppercase;">${item.status}</div>
+              ${item.notes ? `<div style="color: #9ca3af; font-style: italic; font-size: 9px; margin-top: 1px;">${item.notes}</div>` : ''}
+            </td>
+          </tr>
+        `
+      })
+      .join('')
+
+    const printHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${isStandard ? t('manifest.titleStandard') : t('manifest.titleAudit')} - ${targetDate}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 10mm 8mm;
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              color: #111827;
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            tr {
+              page-break-inside: avoid;
+            }
+            thead {
+              display: table-header-group;
+            }
+            tfoot {
+              display: table-footer-group;
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Header -->
+          <div style="border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <h1 style="margin: 0; font-size: 20px; font-weight: 900; letter-spacing: 0.8px; color: #111827;">FAMILY GUEST HOUSE</h1>
+                <p style="margin: 3px 0 0; font-size: 13px; font-weight: 800; color: #1f2937;">
+                  ${isStandard ? t('manifest.titleStandard') : t('manifest.titleAudit')}
+                </p>
+                <p style="margin: 2px 0 0; font-size: 10px; color: #4b5563;">
+                  ${isStandard ? t('manifest.subtitleStandard') : t('manifest.subtitleAudit')}
+                </p>
+              </div>
+              <div style="text-align: right; font-size: 11px; color: #374151;">
+                <div><strong>${t('manifest.manifestDate')}</strong> ${targetDate}</div>
+                <div><strong>${t('manifest.printed')}</strong> ${formatDate(new Date(), 'datetime')}</div>
+                <div><strong>${t('manifest.dutyStaff')}</strong> ${user?.full_name || user?.username || t('manifest.receptionDesk')}</div>
+              </div>
+            </div>
+
+            <!-- KPI Cards Bar -->
+            ${
+              isStandard
+                ? `
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 12px; text-align: center;">
+              <div style="padding: 6px 4px; border: 1px solid #d1d5db; border-radius: 6px; background: #f9fafb;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #4b5563;">${t('manifest.kpiTotalManifest')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #111827;">${filteredItems.length}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #a7f3d0; border-radius: 6px; background: #ecfdf5;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #065f46;">${t('manifest.checkedIn')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #065f46;">${report?.checked_in_count || 0}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #bfdbfe; border-radius: 6px; background: #eff6ff;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #1e40af;">${t('manifest.checkedOut')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #1e40af;">${report?.checked_out_count || 0}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #e9d5ff; border-radius: 6px; background: #faf5ff;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #6b21a8;">${t('manifest.inHouseOccupied')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #6b21a8;">${report?.occupied_count || 0}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #92400e;">${t('manifest.reservedArrivals')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #92400e;">${report?.reserved_count || 0}</div>
+              </div>
+            </div>
+            `
+                : `
+            <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 12px; text-align: center;">
+              <div style="padding: 6px 4px; border: 1px solid #d1d5db; border-radius: 6px; background: #f9fafb;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #4b5563;">${t('manifest.kpiTotalGuests')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #111827;">${filteredItems.length}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #a7f3d0; border-radius: 6px; background: #ecfdf5;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #065f46;">${t('manifest.checkedIn')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #065f46;">${report?.checked_in_count || 0}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #bfdbfe; border-radius: 6px; background: #eff6ff;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #1e40af;">${t('manifest.checkedOut')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #1e40af;">${report?.checked_out_count || 0}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #e9d5ff; border-radius: 6px; background: #faf5ff;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #6b21a8;">${t('manifest.occupied')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #6b21a8;">${report?.occupied_count || 0}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #92400e;">${t('manifest.reserved')}</div>
+                <div style="font-size: 16px; font-weight: 800; color: #92400e;">${report?.reserved_count || 0}</div>
+              </div>
+              <div style="padding: 6px 4px; border: 1px solid #fecdd3; border-radius: 6px; background: #fff1f2;">
+                <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #9f1239;">${t('manifest.totalCollected')}</div>
+                <div style="font-size: 12px; font-weight: 900; color: #9f1239; margin-top: 2px;">${formatCurrency(totalPaid)}</div>
+              </div>
+            </div>
+            `
+            }
+          </div>
+
+          <!-- Manifest Guests Table -->
+          <div style="margin-bottom: 20px;">
+            <table style="width: 100%; border-collapse: collapse; border: 1px solid #d1d5db; border-radius: 6px;">
+              <thead>
+                ${
+                  isStandard
+                    ? `
+                <tr style="background: #f3f4f6; border-bottom: 2px solid #d1d5db; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #374151;">
+                  <th style="padding: 8px 6px; text-align: center; width: 30px;">#</th>
+                  <th style="padding: 8px 8px; text-align: left; width: 90px;">${t('manifest.thActivity')}</th>
+                  <th style="padding: 8px 8px; text-align: left;">${t('manifest.thGuestNameTel')}</th>
+                  <th style="padding: 8px 8px; text-align: left; width: 110px;">${t('manifest.thIdPassport')}</th>
+                  <th style="padding: 8px 8px; text-align: left; width: 80px;">${t('common.room')}</th>
+                  <th style="padding: 8px 8px; text-align: left; width: 85px;">${t('manifest.thCheckIn')}</th>
+                  <th style="padding: 8px 8px; text-align: left; width: 85px;">${t('manifest.thCheckOut')}</th>
+                  <th style="padding: 8px 8px; text-align: center; width: 70px;">${t('manifest.thStay')}</th>
+                  <th style="padding: 8px 8px; text-align: left; width: 80px;">${t('common.status')}</th>
+                </tr>
+                `
+                    : `
+                <tr style="background: #f3f4f6; border-bottom: 2px solid #d1d5db; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #374151;">
+                  <th style="padding: 8px 10px; text-align: left;">${t('manifest.thActivity')}</th>
+                  <th style="padding: 8px 10px; text-align: left;">${t('manifest.thGuestInfo')}</th>
+                  <th style="padding: 8px 10px; text-align: left;">${t('common.room')}</th>
+                  <th style="padding: 8px 10px; text-align: left;">${t('manifest.thDuration')}</th>
+                  <th style="padding: 8px 10px; text-align: right;">${t('manifest.amountPaid')}</th>
+                  <th style="padding: 8px 10px; text-align: right;">${t('manifest.totalExpected')}</th>
+                  <th style="padding: 8px 10px; text-align: left;">${t('common.status')}</th>
+                </tr>
+                `
+                }
+              </thead>
+              <tbody>
+                ${rowsHtml.length > 0 ? rowsHtml : `<tr><td colspan="${isStandard ? 9 : 7}" style="text-align: center; padding: 24px; color: #6b7280; font-size: 12px;">${t('manifest.empty')}</td></tr>`}
+              </tbody>
+              <tfoot>
+                ${
+                  isStandard
+                    ? `
+                <tr style="background: #f9fafb; border-top: 2px solid #111827; font-weight: 800; font-size: 11px;">
+                  <td colspan="7" style="padding: 10px 12px; text-transform: uppercase; letter-spacing: 0.5px;">${t('manifest.totalVerified')}</td>
+                  <td colspan="2" style="padding: 10px 12px; text-align: right; color: #111827; font-size: 12px;">${filteredItems.length === 1 ? t('manifest.registeredGuest', { count: filteredItems.length }) : t('manifest.registeredGuests', { count: filteredItems.length })}</td>
+                </tr>
+                `
+                    : `
+                <tr style="background: #f9fafb; border-top: 2px solid #111827; font-weight: 800; font-size: 11px;">
+                  <td colspan="4" style="padding: 10px; text-align: right; text-transform: uppercase; letter-spacing: 0.5px;">${t('manifest.totalPage')}</td>
+                  <td style="padding: 10px; text-align: right; color: #065f46; font-size: 12px; font-family: monospace;">${formatCurrency(totalPaid)}</td>
+                  <td style="padding: 10px; text-align: right; color: #111827; font-size: 12px; font-family: monospace;">${formatCurrency(totalExpected)}</td>
+                  <td></td>
+                </tr>
+                `
+                }
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- Signatures Section -->
+          ${
+            isStandard
+              ? `
+          <div style="display: flex; justify-content: space-between; margin-top: 36px; padding-top: 16px; border-top: 1px dashed #9ca3af; font-size: 11px; color: #4b5563;">
+            <div style="width: 250px; text-align: center;">
+              <div style="border-bottom: 1px solid #111827; height: 35px; margin-bottom: 6px;"></div>
+              <div><strong>${t('manifest.preparedByReceptionist')}</strong></div>
+              <div style="font-size: 10px; color: #6b7280;">${t('manifest.nameLabel')} ${user?.full_name || user?.username || t('manifest.dutyReceptionist')} &bull; ${t('manifest.signAndDate')}</div>
+            </div>
+            <div style="width: 250px; text-align: center;">
+              <div style="border-bottom: 1px solid #111827; height: 35px; margin-bottom: 6px;"></div>
+              <div><strong>${t('manifest.verifiedByManagement')}</strong></div>
+              <div style="font-size: 10px; color: #6b7280;">${t('manifest.managerSignatureDate')}</div>
+            </div>
+          </div>
+          <div style="margin-top: 24px; text-align: center; font-size: 9px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 6px;">
+            Family Guest House &bull; ${t('manifest.footerStandard')}
+          </div>
+          `
+              : `
+          <div style="display: flex; justify-content: space-between; margin-top: 36px; padding-top: 16px; border-top: 1px dashed #9ca3af; font-size: 11px; color: #4b5563;">
+            <div style="width: 220px; text-align: center;">
+              <div style="border-bottom: 1px solid #111827; height: 35px; margin-bottom: 6px;"></div>
+              <div><strong>${t('manifest.preparedByReceptionist')}</strong></div>
+              <div style="font-size: 10px; color: #6b7280;">${t('manifest.signAndDate')}</div>
+            </div>
+            <div style="width: 220px; text-align: center;">
+              <div style="border-bottom: 1px solid #111827; height: 35px; margin-bottom: 6px;"></div>
+              <div><strong>${t('manifest.verifiedByManagerOwner')}</strong></div>
+              <div style="font-size: 10px; color: #6b7280;">${t('manifest.signAndDate')}</div>
+            </div>
+          </div>
+          `
+          }
+        </body>
+      </html>
+    `
+
+    doc.open()
+    doc.write(printHtml)
+    doc.close()
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe)
+        }
+      }, 3000)
+    }, 250)
+  }
+
+  const exportCSV = () => {
+    if (!filteredItems.length) return
+    const isStandard = effectiveType === 'STANDARD'
+    const headers = isStandard
+      ? [
+          t('manifest.thActivity'),
+          t('manifest.guestName'),
+          t('common.phone'),
+          t('common.idNumber'),
+          t('common.room'),
+          t('manifest.roomType'),
+          t('manifest.daysCount'),
+          t('manifest.checkInDate'),
+          t('manifest.checkOutDate'),
+          t('common.status'),
+          t('common.notes'),
+        ]
+      : [
+          t('manifest.thActivity'),
+          t('manifest.guestName'),
+          t('common.phone'),
+          t('common.idNumber'),
+          t('common.room'),
+          t('manifest.roomType'),
+          t('manifest.daysCount'),
+          t('manifest.amountPaidEtb', { currency }),
+          t('manifest.totalExpectedEtb', { currency }),
+          t('manifest.checkInDate'),
+          t('manifest.checkOutDate'),
+          t('common.status'),
+          t('common.notes'),
+        ]
+
+    const rows = filteredItems.map((item) =>
+      isStandard
+        ? [
+            `"${item.activity_type}"`,
+            `"${item.guest_name.replace(/"/g, '""')}"`,
+            `"${item.guest_phone}"`,
+            `"${item.guest_id_number || ''}"`,
+            `"${item.room_number}"`,
+            `"${item.room_type || ''}"`,
+            item.days_count,
+            `"${item.check_in_date || ''}"`,
+            `"${item.checkout_date || ''}"`,
+            `"${item.status}"`,
+            `"${(item.notes || '').replace(/"/g, '""')}"`,
+          ]
+        : [
+            `"${item.activity_type}"`,
+            `"${item.guest_name.replace(/"/g, '""')}"`,
+            `"${item.guest_phone}"`,
+            `"${item.guest_id_number || ''}"`,
+            `"${item.room_number}"`,
+            `"${item.room_type || ''}"`,
+            item.days_count,
+            item.amount_paid,
+            item.expected_amount,
+            `"${item.check_in_date || ''}"`,
+            `"${item.checkout_date || ''}"`,
+            `"${item.status}"`,
+            `"${(item.notes || '').replace(/"/g, '""')}"`,
+          ]
+    )
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n')
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `Daily_Guest_Manifest_${targetDate}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  return (
+    <>
+      {/* Inline styles for clean print handling */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 12mm 10mm;
+          }
+          html, body {
+            overflow: visible !important;
+            height: auto !important;
+            background: white !important;
+          }
+          body > * {
+            visibility: hidden !important;
+          }
+          div[role="dialog"] {
+            position: static !important;
+            display: block !important;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            inset: auto !important;
+            background: transparent !important;
+          }
+          div[role="dialog"] > div[aria-hidden="true"] {
+            display: none !important;
+          }
+          div[role="dialog"] > div:not([aria-hidden="true"]) {
+            position: static !important;
+            display: block !important;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            width: 100% !important;
+            max-width: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: white !important;
+          }
+          #manifest-printable-area, #manifest-printable-area * {
+            visibility: visible !important;
+          }
+          #manifest-printable-area {
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            color: black !important;
+          }
+          .overflow-x-auto {
+            overflow: visible !important;
+          }
+          table {
+            width: 100% !important;
+            page-break-inside: auto;
+          }
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tfoot {
+            display: table-footer-group !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-only {
+            display: block !important;
+          }
+        }
+        @media screen {
+          .print-only {
+            display: none !important;
+          }
+        }
+      `}</style>
+
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={
+          effectiveType === 'STANDARD'
+            ? t('manifest.titleStandard')
+            : t('manifest.titleAudit')
+        }
+        description={
+          effectiveType === 'STANDARD'
+            ? t('manifest.descStandard')
+            : t('manifest.descAudit')
+        }
+        size="5xl"
+        footer={
+          <div className="flex items-center justify-between w-full no-print">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportCSV}
+                disabled={!filteredItems.length}
+                className="gap-1.5 text-xs text-stone-700 hover:bg-stone-100"
+              >
+                <FileSpreadsheet size={14} className="text-emerald-600" />
+                {t('manifest.exportCsv')}
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={onClose}
+                size="sm"
+              >
+                {t('common.close')}
+              </Button>
+              <Button
+                onClick={handlePrint}
+                size="sm"
+                className="gap-1.5 bg-stone-900 hover:bg-stone-800 text-white font-medium shadow-sm"
+              >
+                <Printer size={15} />
+                {effectiveType === 'STANDARD' ? t('manifest.printStandard') : t('manifest.printAudit')}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div id="manifest-printable-area" className="space-y-5">
+          {/* PRINT-ONLY OFFICIAL HEADER */}
+          <div className="print-only border-b-2 border-stone-800 pb-4 mb-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold uppercase tracking-wider text-stone-900">
+                  Family Guest House
+                </h1>
+                <p className="text-sm font-bold text-stone-700">
+                  {effectiveType === 'STANDARD'
+                    ? t('manifest.titleStandard')
+                    : t('manifest.titleAudit')}
+                </p>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  {effectiveType === 'STANDARD'
+                    ? t('manifest.subtitleStandard')
+                    : t('manifest.subtitleAudit')}
+                </p>
+              </div>
+              <div className="text-right text-xs text-stone-700">
+                <p className="font-bold text-stone-900">{t('manifest.manifestDate')} {targetDate}</p>
+                <p>{t('manifest.printed')} {formatDate(new Date(), 'datetime')}</p>
+                <p>{t('manifest.dutyStaff')} {user?.full_name || user?.username || t('manifest.receptionDesk')}</p>
+              </div>
+            </div>
+
+            {effectiveType === 'STANDARD' ? (
+              <div className="grid grid-cols-5 gap-2 mt-4 pt-3 border-t border-stone-200 text-center">
+                <div className="p-2 border border-stone-300 rounded bg-stone-50">
+                  <p className="text-[10px] uppercase font-bold text-stone-500">{t('manifest.kpiTotalManifest')}</p>
+                  <p className="text-base font-bold text-stone-900">{filteredItems.length}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-emerald-700">{t('manifest.checkedIn')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.checked_in_count || 0}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-blue-700">{t('manifest.checkedOut')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.checked_out_count || 0}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-purple-700">{t('manifest.inHouseOccupied')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.occupied_count || 0}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-amber-700">{t('manifest.reservedArrivals')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.reserved_count || 0}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-6 gap-2 mt-4 pt-3 border-t border-stone-200 text-center">
+                <div className="p-2 border border-stone-300 rounded bg-stone-50">
+                  <p className="text-[10px] uppercase font-bold text-stone-500">{t('manifest.kpiTotalGuests')}</p>
+                  <p className="text-base font-bold text-stone-900">{filteredItems.length}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-emerald-700">{t('manifest.checkedIn')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.checked_in_count || 0}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-blue-700">{t('manifest.checkedOut')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.checked_out_count || 0}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-purple-700">{t('manifest.occupied')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.occupied_count || 0}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded">
+                  <p className="text-[10px] uppercase font-bold text-amber-700">{t('manifest.reserved')}</p>
+                  <p className="text-base font-bold text-stone-900">{report?.reserved_count || 0}</p>
+                </div>
+                <div className="p-2 border border-stone-300 rounded bg-stone-50">
+                  <p className="text-[10px] uppercase font-bold text-rose-700">{t('manifest.totalCollected')}</p>
+                  <p className="text-sm font-bold text-stone-900">{formatCurrency(report?.total_amount_paid || 0)}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SCREEN CONTROLS & DATE SELECTOR */}
+          <div className="no-print flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200/80">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-700">
+                <Calendar size={15} className="text-rose-600" />
+                {t('manifest.targetDate')}
+              </div>
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(e) => setTargetDate(e.target.value)}
+                className="text-xs font-medium bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500 text-stone-800 shadow-xs"
+              />
+              <button
+                onClick={() => setTargetDate(new Date().toISOString().slice(0, 10))}
+                className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/70 px-2.5 py-1.5 rounded-lg border border-rose-200 transition-colors"
+              >
+                {t('common.today')}
+              </button>
+              <button
+                onClick={() => fetchManifest(targetDate)}
+                title={t('manifest.refresh')}
+                className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-white rounded-lg transition-colors"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              </button>
+
+              {!isReception ? (
+                <div className="flex items-center bg-stone-200/80 p-0.5 rounded-lg text-xs font-semibold ml-2">
+                  <button
+                    type="button"
+                    onClick={() => setManifestType('STANDARD')}
+                    className={`px-2.5 py-1 rounded-md transition ${
+                      manifestType === 'STANDARD'
+                        ? 'bg-white text-stone-900 shadow-xs font-bold'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    {t('manifest.tabStandard')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManifestType('FINANCIAL')}
+                    className={`px-2.5 py-1 rounded-md transition ${
+                      manifestType === 'FINANCIAL'
+                        ? 'bg-white text-stone-900 shadow-xs font-bold'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    {t('manifest.tabFinancial')}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-64">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder={t('manifest.searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 text-stone-800 shadow-xs"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={handlePrint}
+                className="gap-1.5 bg-stone-900 hover:bg-stone-800 text-white font-medium text-xs px-3 py-1.5 shadow-xs"
+              >
+                <Printer size={14} />
+                {t('common.print')}
+              </Button>
+            </div>
+          </div>
+
+          {/* SCREEN KPI SUMMARY CARDS */}
+          <div className="no-print grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">{t('manifest.checkedIn')}</span>
+                <span className="p-1 rounded-md bg-emerald-100 text-emerald-700">
+                  <CheckCircle2 size={15} />
+                </span>
+              </div>
+              <div className="mt-2">
+                <p className="text-2xl font-bold text-emerald-950">{report?.checked_in_count || 0}</p>
+                <p className="text-[10px] text-emerald-700 font-medium mt-0.5">{t('manifest.descCheckedIn')}</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">{t('manifest.checkedOut')}</span>
+                <span className="p-1 rounded-md bg-blue-100 text-blue-700">
+                  <LogOut size={15} />
+                </span>
+              </div>
+              <div className="mt-2">
+                <p className="text-2xl font-bold text-blue-950">{report?.checked_out_count || 0}</p>
+                <p className="text-[10px] text-blue-700 font-medium mt-0.5">{t('manifest.descCheckedOut')}</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/50 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-purple-800 uppercase tracking-wider">{t('manifest.kpiInHouseGuests')}</span>
+                <span className="p-1 rounded-md bg-purple-100 text-purple-700">
+                  <BedDouble size={15} />
+                </span>
+              </div>
+              <div className="mt-2">
+                <p className="text-2xl font-bold text-purple-950">{report?.occupied_count || 0}</p>
+                <p className="text-[10px] text-purple-700 font-medium mt-0.5">{t('manifest.descOccupied')}</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/50 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">{t('manifest.reserved')}</span>
+                <span className="p-1 rounded-md bg-amber-100 text-amber-700">
+                  <Clock size={15} />
+                </span>
+              </div>
+              <div className="mt-2">
+                <p className="text-2xl font-bold text-amber-950">{report?.reserved_count || 0}</p>
+                <p className="text-[10px] text-amber-700 font-medium mt-0.5">{t('manifest.descReserved')}</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex flex-col justify-between col-span-2 sm:col-span-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">{t('manifest.totalCollected')}</span>
+                <span className="p-1 rounded-md bg-rose-100 text-rose-700">
+                  <CreditCard size={15} />
+                </span>
+              </div>
+              <div className="mt-2">
+                <p className="text-lg sm:text-xl font-extrabold text-rose-950 truncate">
+                  {formatCurrency(report?.total_amount_paid || 0)}
+                </p>
+                <p className="text-[10px] text-rose-700 font-medium mt-0.5">{t('manifest.descCollected', { date: targetDate })}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* SCREEN FILTER TABS */}
+          <div className="no-print flex items-center gap-1.5 border-b border-stone-200 pb-2 overflow-x-auto text-xs font-medium">
+            <button
+              onClick={() => setActivityFilter('ALL')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                activityFilter === 'ALL'
+                  ? 'bg-stone-900 text-white font-semibold'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <Users size={14} />
+              {t('manifest.filterAll', { count: report?.total_guests_count || 0 })}
+            </button>
+            <button
+              onClick={() => setActivityFilter('CHECKED_IN')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                activityFilter === 'CHECKED_IN'
+                  ? 'bg-emerald-700 text-white font-semibold'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <CheckCircle2 size={14} className="text-emerald-400" />
+              {t('manifest.filterCheckedIn', { count: report?.checked_in_count || 0 })}
+            </button>
+            <button
+              onClick={() => setActivityFilter('CHECKED_OUT')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                activityFilter === 'CHECKED_OUT'
+                  ? 'bg-blue-700 text-white font-semibold'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <LogOut size={14} className="text-blue-400" />
+              {t('manifest.filterCheckedOut', { count: report?.checked_out_count || 0 })}
+            </button>
+            <button
+              onClick={() => setActivityFilter('OCCUPIED')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                activityFilter === 'OCCUPIED'
+                  ? 'bg-purple-700 text-white font-semibold'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <BedDouble size={14} className="text-purple-300" />
+              {t('manifest.filterOccupied', { count: report?.occupied_count || 0 })}
+            </button>
+            <button
+              onClick={() => setActivityFilter('RESERVED')}
+              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                activityFilter === 'RESERVED'
+                  ? 'bg-amber-600 text-white font-semibold'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <Clock size={14} className="text-amber-300" />
+              {t('manifest.filterReserved', { count: report?.reserved_count || 0 })}
+            </button>
+          </div>
+
+          {/* ERROR OR LOADING STATE */}
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                onClick={() => fetchManifest(targetDate)}
+                className="underline font-semibold hover:text-red-900"
+              >
+                {t('common.retry')}
+              </button>
+            </div>
+          )}
+
+          {/* GUEST MANIFEST TABLE */}
+          <div className="overflow-x-auto border border-stone-200 rounded-xl">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-stone-100/80 text-stone-700 font-bold uppercase text-[11px] border-b border-stone-200">
+                  <th className="py-2.5 px-3">{t('manifest.thActivity')}</th>
+                  <th className="py-2.5 px-3">{t('manifest.thGuestInfo')}</th>
+                  <th className="py-2.5 px-3">{t('common.room')}</th>
+                  <th className="py-2.5 px-3">{t('manifest.thStayDurationDates')}</th>
+                  {showFinancials && (
+                    <>
+                      <th className="py-2.5 px-3 text-right">{t('manifest.amountPaid')}</th>
+                      <th className="py-2.5 px-3 text-right">{t('manifest.totalExpected')}</th>
+                    </>
+                  )}
+                  <th className="py-2.5 px-3">{t('manifest.thStatusTime')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-200 bg-white">
+                {loading ? (
+                  <tr>
+                    <td colSpan={showFinancials ? 7 : 5} className="py-12 text-center text-stone-500">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RefreshCw size={22} className="animate-spin text-rose-500" />
+                        <span className="text-xs font-medium">{t('manifest.loading', { date: targetDate })}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={showFinancials ? 7 : 5} className="py-10 text-center text-stone-400">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <Users size={28} className="text-stone-300" />
+                        <p className="text-xs font-medium text-stone-600">{t('manifest.empty')}</p>
+                        <p className="text-[11px] text-stone-400">
+                          {t('manifest.emptyHint')}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map((item) => {
+                    const isCheckedIn = item.activity_type === 'CHECKED_IN'
+                    const isCheckedOut = item.activity_type === 'CHECKED_OUT'
+                    const isOccupied = item.activity_type === 'OCCUPIED'
+                    const isReserved = item.activity_type === 'RESERVED'
+
+                    return (
+                      <tr key={item.id} className="hover:bg-stone-50/70 transition-colors">
+                        {/* Activity Badge */}
+                        <td className="py-2.5 px-3 align-top">
+                          {isCheckedIn && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 size={11} />
+                              {t('manifest.checkedIn')}
+                            </span>
+                          )}
+                          {isCheckedOut && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                              <LogOut size={11} />
+                              {t('manifest.checkedOut')}
+                            </span>
+                          )}
+                          {isOccupied && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300">
+                              <BedDouble size={11} />
+                              {t('manifest.occupied')}
+                            </span>
+                          )}
+                          {isReserved && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              <Clock size={11} />
+                              {t('manifest.reserved')}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Guest Info */}
+                        <td className="py-2.5 px-3 align-top">
+                          <p className="font-bold text-stone-900 leading-snug">{item.guest_name}</p>
+                          <div className="flex items-center gap-2 mt-0.5 text-[11px] text-stone-500">
+                            <span className="flex items-center gap-1">
+                              <Phone size={10} />
+                              {item.guest_phone}
+                            </span>
+                            {item.guest_id_number && (
+                              <span className="text-stone-400">{t('manifest.idPrefix')} {item.guest_id_number}</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Room */}
+                        <td className="py-2.5 px-3 align-top">
+                          <div className="flex items-center gap-1 font-bold text-stone-800">
+                            <Building size={12} className="text-stone-400" />
+                            {t('common.roomWithNumber', { number: item.room_number })}
+                          </div>
+                          {item.room_type && (
+                            <p className="text-[10px] text-stone-500 font-medium mt-0.5">
+                              {item.room_type}
+                            </p>
+                          )}
+                        </td>
+
+                        {/* Stay Duration */}
+                        <td className="py-2.5 px-3 align-top">
+                          <div className="flex items-center gap-1 font-semibold text-stone-900">
+                            <Sparkles size={11} className="text-amber-500" />
+                            {item.days_count} {item.days_count === 1 ? t('manifest.dayNightUnit') : t('manifest.daysNightsUnit')}
+                          </div>
+                          <p className="text-[10px] text-stone-500 mt-0.5">
+                            {formatDateLabel(item.check_in_date)} &rarr; {formatDateLabel(item.checkout_date)}
+                          </p>
+                        </td>
+
+                        {/* Amount Paid & Expected (Audit mode only) */}
+                        {showFinancials && (
+                          <>
+                            <td className="py-2.5 px-3 align-top text-right">
+                              <span
+                                className={`font-bold ${
+                                  parseFloat(String(item.amount_paid)) > 0
+                                    ? 'text-emerald-700 font-mono text-[12px]'
+                                    : 'text-stone-400 font-mono text-[11px]'
+                                }`}
+                              >
+                                {formatCurrency(item.amount_paid)}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 align-top text-right">
+                              <span className="font-semibold text-stone-700 font-mono text-[11px]">
+                                {formatCurrency(item.expected_amount)}
+                              </span>
+                            </td>
+                          </>
+                        )}
+
+                        {/* Status & Time */}
+                        <td className="py-2.5 px-3 align-top">
+                          <p className="text-[11px] font-medium text-stone-700">
+                            {isCheckedIn && t('manifest.inTime', { time: formatDateTime(item.check_in_date) })}
+                            {isCheckedOut && t('manifest.outTime', { time: formatDateTime(item.checkout_date) })}
+                            {isReserved && t('manifest.dueTime', { time: formatDateTime(item.check_in_date) })}
+                          </p>
+                          {item.notes && (
+                            <p className="text-[10px] text-stone-400 italic truncate max-w-[140px] mt-0.5" title={item.notes}>
+                              {item.notes}
+                            </p>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+              {filteredItems.length > 0 && (
+                <tfoot>
+                  <tr className="bg-stone-100 font-bold border-t-2 border-stone-300 text-stone-900">
+                    <td colSpan={4} className="py-2.5 px-3 text-right">
+                      {showFinancials ? t('manifest.totalPage') : t('manifest.totalVerified')}
+                    </td>
+                    {showFinancials ? (
+                      <>
+                        <td className="py-2.5 px-3 text-right text-emerald-800 font-mono text-sm">
+                          {formatCurrency(
+                            filteredItems.reduce((acc, curr) => acc + parseFloat(String(curr.amount_paid || 0)), 0)
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-stone-800 font-mono text-sm">
+                          {formatCurrency(
+                            filteredItems.reduce((acc, curr) => acc + parseFloat(String(curr.expected_amount || 0)), 0)
+                          )}
+                        </td>
+                        <td></td>
+                      </>
+                    ) : (
+                      <td colSpan={1} className="py-2.5 px-3 text-right text-stone-800 text-xs font-bold">
+                        {filteredItems.length === 1 ? t('manifest.registeredGuest', { count: filteredItems.length }) : t('manifest.registeredGuests', { count: filteredItems.length })}
+                      </td>
+                    )}
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+
+          {/* PRINT-ONLY SIGNATURE BLOCK & AUDIT VERIFICATION */}
+          <div className="print-only pt-8 mt-8 border-t-2 border-stone-800">
+            {effectiveType === 'STANDARD' ? (
+              <>
+                <div className="grid grid-cols-2 gap-12 text-xs">
+                  <div className="space-y-4">
+                    <p className="font-bold text-stone-900 uppercase">{t('manifest.preparedByReceptionist')}:</p>
+                    <div className="pt-8 border-b border-stone-400"></div>
+                    <div className="flex justify-between text-[11px] text-stone-600">
+                      <span>{t('manifest.nameLabel')} {user?.full_name || user?.username || t('manifest.dutyReceptionist')}</span>
+                      <span>{t('manifest.signature')}</span>
+                      <span>{t('common.date')}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <p className="font-bold text-stone-900 uppercase">{t('manifest.verifiedByManagement')}:</p>
+                    <div className="pt-8 border-b border-stone-400"></div>
+                    <div className="flex justify-between text-[11px] text-stone-600">
+                      <span>{t('manifest.managerName')}</span>
+                      <span>{t('manifest.signature')}</span>
+                      <span>{t('common.date')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 text-center text-[10px] text-stone-500 border-t border-stone-200 pt-2">
+                  Family Guest House &bull; {t('manifest.footerStandard')}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-12 text-xs">
+                  <div className="space-y-4">
+                    <p className="font-bold text-stone-900 uppercase">{t('manifest.preparedAuditedReceptionist')}:</p>
+                    <div className="pt-8 border-b border-stone-400"></div>
+                    <div className="flex justify-between text-[11px] text-stone-600">
+                      <span>{t('manifest.nameLabel')} {user?.full_name || t('manifest.staffMember')}</span>
+                      <span>{t('manifest.signature')}</span>
+                      <span>{t('common.date')}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <p className="font-bold text-stone-900 uppercase">{t('manifest.verifiedDutyManager')}:</p>
+                    <div className="pt-8 border-b border-stone-400"></div>
+                    <div className="flex justify-between text-[11px] text-stone-600">
+                      <span>{t('manifest.managerName')}</span>
+                      <span>{t('manifest.signature')}</span>
+                      <span>{t('common.date')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 text-center text-[10px] text-stone-500 border-t border-stone-200 pt-2">
+                  Family Guest House Management System &bull; {t('manifest.footerAudit')}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </Modal>
+    </>
+  )
+}

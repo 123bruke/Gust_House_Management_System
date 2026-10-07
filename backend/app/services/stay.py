@@ -1,0 +1,335 @@
+from datetime import datetime, time, timedelta, timezone
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.models.audit_log import AuditLog
+from app.models.charge import Charge, ChargeType
+from app.models.payment import Payment, PaymentMethod, PaymentStatus
+from app.models.reservation import Reservation, ReservationStatus
+from app.models.room import Room, RoomStatus
+from app.models.stay import Stay, StayStatus
+from app.repositories.stay import StayRepository
+from app.services.reservation import InvalidTransitionError, ResourceNotFoundError
+
+
+from app.models.property import Property
+
+
+def is_late_checkout(actual_checkout_at: datetime, deadline_hour: int = 4, deadline_minute: int = 0) -> bool:
+	deadline = datetime.combine(
+		actual_checkout_at.date(),
+		time(deadline_hour, deadline_minute),
+		tzinfo=actual_checkout_at.tzinfo,
+	)
+	return actual_checkout_at > deadline
+
+
+async def check_out(
+	session: AsyncSession,
+	stay: Stay,
+	*,
+	user_id: int,
+	now: datetime,
+	penalty_amount: Decimal | None = None,
+	actual_checkout_at: datetime | None = None,
+) -> Stay:
+	if stay.status != StayStatus.CHECKED_IN.value:
+		raise InvalidTransitionError("Only CHECKED_IN stays can be checked out")
+	reservation = await session.get(Reservation, stay.reservation_id)
+	room = await session.get(Room, stay.room_id)
+	if reservation is None:
+		raise ResourceNotFoundError("Reservation not found")
+	if room is None:
+		raise ResourceNotFoundError("Room not found")
+	checkout_at = actual_checkout_at or now
+	if checkout_at.tzinfo is None:
+		checkout_at = checkout_at.replace(tzinfo=timezone.utc)
+	if checkout_at <= stay.check_in_at:
+		raise InvalidTransitionError("Checkout time must be after check-in time")
+	if checkout_at > now:
+		raise InvalidTransitionError("Checkout time cannot be in the future")
+
+	if actual_checkout_at and checkout_at.date() < stay.expected_checkout.date():
+		room_charges = list(
+			(await session.execute(
+				select(Charge).where(
+					Charge.stay_id == stay.id,
+					Charge.charge_type == ChargeType.ROOM.value,
+					~Charge.description.ilike("%extension%"),
+				)
+			)).scalars().all())
+		if room_charges:
+			original_nights = max(1, (stay.expected_checkout.date() - stay.check_in_at.date()).days)
+			used_nights = max(1, (checkout_at.date() - stay.check_in_at.date()).days)
+			used_nights = min(used_nights, original_nights)
+			for charge in room_charges:
+				charge.amount = (charge.amount * Decimal(used_nights) / Decimal(original_nights)).quantize(Decimal("0.01"))
+
+	stay.status = StayStatus.CHECKED_OUT.value
+	stay.actual_checkout_at = checkout_at
+	reservation.status = ReservationStatus.CHECKED_OUT.value
+	room.status = RoomStatus.CLEANING.value
+	room.available_after = checkout_at + timedelta(hours=1)
+
+	prop = await session.get(Property, stay.property_id) if stay.property_id else None
+	d_hour = prop.checkout_deadline_hour if prop else get_settings().checkout_deadline_hour
+	d_minute = prop.checkout_deadline_minute if prop else get_settings().checkout_deadline_minute
+	d_penalty = prop.late_checkout_penalty if prop else get_settings().late_checkout_penalty
+
+	if penalty_amount is not None:
+		if penalty_amount > 0:
+			from app.services.payment import add_charge_record
+
+			await add_charge_record(
+				session,
+				stay_id=stay.id,
+				charge_type=ChargeType.LATE_CHECKOUT_PENALTY,
+				description="Late checkout penalty",
+				amount=penalty_amount,
+				created_by=user_id,
+			)
+	elif is_late_checkout(now, deadline_hour=d_hour, deadline_minute=d_minute):
+		from app.services.payment import add_charge_record
+
+		await add_charge_record(
+			session,
+			stay_id=stay.id,
+			charge_type=ChargeType.LATE_CHECKOUT_PENALTY,
+			description="Late checkout penalty",
+			amount=d_penalty,
+			created_by=user_id,
+		)
+	session.add(
+		AuditLog(
+			property_id=stay.property_id,
+			user_id=user_id,
+			action="CHECK_OUT",
+			entity_type="Stay",
+			entity_id=stay.id,
+			details=f'{{"is_late_checkout": {str(is_late_checkout(checkout_at, deadline_hour=d_hour, deadline_minute=d_minute)).lower()}}}',
+		)
+	)
+	await session.commit()
+	await session.refresh(stay)
+	return stay
+
+
+async def extend_stay(
+	session: AsyncSession,
+	stay: Stay,
+	*,
+	user_id: int,
+	new_expected_checkout: datetime,
+	payment_option: str | None = None,
+	payment_method: str | None = None,
+) -> Stay:
+	if stay.status != StayStatus.CHECKED_IN.value:
+		raise InvalidTransitionError("Only CHECKED_IN stays can be extended")
+	if new_expected_checkout <= stay.expected_checkout:
+		raise InvalidTransitionError("New checkout must be later than current expected checkout")
+	old_checkout = stay.expected_checkout
+	stay.expected_checkout = new_expected_checkout
+	room = await session.get(Room, stay.room_id)
+	if room is None:
+		raise ResourceNotFoundError("Room not found")
+	from app.services.payment import add_charge_record
+	from app.models.payment import Payment, PaymentStatus
+
+	hotel_tz = timezone(timedelta(hours=3))
+	local_old = old_checkout.astimezone(hotel_tz) if old_checkout.tzinfo else old_checkout
+	local_new = new_expected_checkout.astimezone(hotel_tz) if new_expected_checkout.tzinfo else new_expected_checkout
+
+	from_str = local_old.strftime("%Y-%m-%d")
+	to_str = local_new.strftime("%Y-%m-%d")
+	extension_days = max(1, round((new_expected_checkout - old_checkout).total_seconds() / 86400))
+	extension_charge = Decimal(extension_days) * Decimal(str(room.price))
+
+	is_pay_now = (payment_option or "").upper() == "PAY_NOW"
+	is_credit = (payment_option or "").upper() == "CREDIT"
+	pay_method_val = (payment_method or "CASH").upper()
+
+	if is_credit:
+		charge_desc = f"Stay extension ({extension_days} night{'s' if extension_days > 1 else ''}: {from_str} to {to_str} - CREDIT @ ETB {room.price:,.2f})"
+	elif is_pay_now:
+		charge_desc = f"Stay extension ({extension_days} night{'s' if extension_days > 1 else ''}: {from_str} to {to_str} - PAID via {pay_method_val} @ ETB {room.price:,.2f})"
+	else:
+		charge_desc = f"Stay extension ({extension_days} night{'s' if extension_days > 1 else ''}: {from_str} to {to_str} @ ETB {room.price:,.2f})"
+
+	await add_charge_record(
+		session,
+		stay_id=stay.id,
+		charge_type=ChargeType.ROOM,
+		description=charge_desc,
+		amount=extension_charge,
+		created_by=user_id,
+	)
+
+	if is_pay_now:
+		payment_ref = f"Stay extension ({extension_days} night{'s' if extension_days > 1 else ''}: {from_str} to {to_str}) - {pay_method_val}"
+		payment = Payment(
+			property_id=stay.property_id,
+			stay_id=stay.id,
+			amount=extension_charge,
+			payment_method=pay_method_val,
+			status=PaymentStatus.SUCCESS.value,
+			reference=payment_ref,
+			paid_at=datetime.now(timezone.utc),
+			created_by=user_id,
+		)
+		session.add(payment)
+		session.add(
+			AuditLog(
+				property_id=stay.property_id,
+				user_id=user_id,
+				action="PAYMENT_CREATED",
+				entity_type="Payment",
+				entity_id=stay.id,
+				details=f'{{"amount": "{extension_charge}", "method": "{pay_method_val}", "extension_days": {extension_days}}}',
+			)
+		)
+
+	session.add(
+		AuditLog(
+			property_id=stay.property_id,
+			user_id=user_id,
+			action="STAY_EXTENDED",
+			entity_type="Stay",
+			entity_id=stay.id,
+			details=f'{{"from": "{from_str}", "to": "{to_str}", "days": {extension_days}, "payment_option": "{payment_option or "NONE"}"}}',
+		)
+	)
+	await session.commit()
+	await session.refresh(stay)
+	return stay
+
+
+
+async def get_stay(session: AsyncSession, stay_id: int) -> Stay:
+	stay = await StayRepository(session).get_by_id(stay_id)
+	if stay is None:
+		raise ResourceNotFoundError("Stay not found")
+	return stay
+
+
+async def void_check_in(
+	session: AsyncSession,
+	stay: Stay,
+	*,
+	user_id: int,
+	now: datetime,
+	reason: str,
+	notes: str | None = None,
+	room_condition: str = "AVAILABLE",
+	refund_amount: Decimal | None = None,
+	refund_method: str | None = None,
+	refund_bank_name: str | None = None,
+) -> Stay:
+	if stay.status != StayStatus.CHECKED_IN.value:
+		raise InvalidTransitionError("Only CHECKED_IN stays can be voided")
+
+	reservation = await session.get(Reservation, stay.reservation_id)
+	room = await session.get(Room, stay.room_id)
+	if reservation is None:
+		raise ResourceNotFoundError("Reservation not found")
+	if room is None:
+		raise ResourceNotFoundError("Room not found")
+
+	# Update stay
+	stay.status = StayStatus.VOIDED.value
+	stay.actual_checkout_at = now
+	full_reason = f"Check-in voided: {reason}" + (f" - {notes}" if notes else "")
+	stay.notes = (f"{stay.notes} | {full_reason}") if stay.notes else full_reason
+
+	# Update reservation
+	reservation.status = ReservationStatus.CANCELLED.value
+	reservation.reason = full_reason
+
+	# Update room status
+	if room_condition == "CLEANING":
+		room.status = RoomStatus.CLEANING.value
+		room.available_after = now + timedelta(hours=1)
+	else:
+		room.status = RoomStatus.AVAILABLE.value
+		room.available_after = None
+
+	# Find successful payments for this stay
+	successful_payments = list(
+		(
+			await session.execute(
+				select(Payment).where(
+					Payment.stay_id == stay.id,
+					Payment.status == PaymentStatus.SUCCESS.value,
+				)
+			)
+		)
+		.scalars()
+		.all()
+	)
+	total_paid = sum((Decimal(str(p.amount)) for p in successful_payments), Decimal("0.00"))
+
+	# Remove existing room charges so no open debt remains
+	charges = list(
+		(await session.execute(select(Charge).where(Charge.stay_id == stay.id))).scalars().all()
+	)
+	for c in charges:
+		await session.delete(c)
+
+	# Calculate refund and retained fee
+	refund_amt = refund_amount if refund_amount is not None else total_paid
+	refund_amt = max(Decimal("0.00"), min(refund_amt, total_paid))
+	retained_fee = total_paid - refund_amt
+
+	# Mark existing payments as REFUNDED
+	for p in successful_payments:
+		p.status = PaymentStatus.REFUNDED.value
+		ref_method_str = refund_method or p.payment_method
+		if ref_method_str == "OTHER" and refund_bank_name:
+			ref_method_str = f"OTHER ({refund_bank_name})"
+		p.reference = (
+			f"{p.reference or ''} [REFUNDED on void check-in: {refund_amt:,.2f} ETB via {ref_method_str}]"
+		).strip()
+
+	# If guest house retains a fee (cancellation / cleaning fee)
+	if retained_fee > 0:
+		fee_charge = Charge(
+			property_id=stay.property_id,
+			stay_id=stay.id,
+			charge_type=ChargeType.ROOM.value,
+			description=f"Retained cancellation/cleaning fee on voided check-in ({reason})",
+			amount=retained_fee,
+			quantity=1,
+			created_by=user_id,
+		)
+		session.add(fee_charge)
+
+		retained_payment = Payment(
+			property_id=stay.property_id,
+			stay_id=stay.id,
+			amount=retained_fee,
+			payment_method=successful_payments[0].payment_method if successful_payments else PaymentMethod.CASH.value,
+			status=PaymentStatus.SUCCESS.value,
+			reference=f"Retained cancellation fee for voided check-in #{stay.id}",
+			paid_at=now,
+			created_by=user_id,
+		)
+		session.add(retained_payment)
+
+	# Audit Log
+	session.add(
+		AuditLog(
+			property_id=stay.property_id,
+			user_id=user_id,
+			action="CHECK_IN_VOIDED",
+			entity_type="Stay",
+			entity_id=stay.id,
+			details=f'{{"reason": "{reason}", "room_condition": "{room_condition}", "total_paid": "{total_paid}", "refunded": "{refund_amt}", "retained_fee": "{retained_fee}"}}',
+		)
+	)
+
+	await session.commit()
+	await session.refresh(stay)
+	return stay
+

@@ -1,0 +1,424 @@
+import { useState, useEffect, useMemo } from 'react'
+import { Calendar, AlertCircle, Building2 } from '../common/MaterialIcon'
+import { Modal } from '../common/Modal'
+import { Button } from '../common/Button'
+import { Input } from '../common/Input'
+import { toLocalDatetimeInput, todayLocalDateString } from '../../utils/dateUtils'
+import { sortRoomsAscending } from '../../utils/roomUtils'
+import type { Room, Guest } from '../../types/api'
+import { getGuests, createGuest } from '../../api/guests'
+import { createReservation } from '../../api/reservations'
+import { getApiError } from '../../api/client'
+import { useI18n } from '../../i18n'
+
+interface ReservationModalProps {
+  isOpen: boolean
+  onClose: () => void
+  availableRooms: Room[]
+  selectedRoomId?: number
+  initialGuest?: {
+    id?: number
+    fullName?: string
+    phone?: string
+    nationality?: string | null
+    idNumber?: string | null
+  }
+  onSuccess: () => void
+}
+
+export function ReservationModal({
+  isOpen,
+  onClose,
+  availableRooms,
+  selectedRoomId,
+  initialGuest,
+  onSuccess,
+}: ReservationModalProps) {
+  const { t, formatMoney } = useI18n()
+  const [existingGuests, setExistingGuests] = useState<Guest[]>([])
+  const [selectedGuestId, setSelectedGuestId] = useState<number | null>(null)
+  const [guestSearch, setGuestSearch] = useState('')
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false)
+
+  // Guest fields
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [nationality, setNationality] = useState('Ethiopian')
+
+  const sortedAvailableRooms = useMemo(() => sortRoomsAscending(availableRooms), [availableRooms])
+  const [roomId, setRoomId] = useState<number>(selectedRoomId || sortedAvailableRooms[0]?.id || 0)
+  const [arrivalDate, setArrivalDate] = useState(() => {
+    const now = new Date()
+    now.setHours(14, 0, 0, 0)
+    return toLocalDatetimeInput(now)
+  })
+  const [checkoutDate, setCheckoutDate] = useState(() => {
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(11, 0, 0, 0)
+    return toLocalDatetimeInput(tomorrow)
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (selectedRoomId && sortedAvailableRooms.some((r) => r.id === selectedRoomId)) {
+      setRoomId(selectedRoomId)
+    } else if (sortedAvailableRooms.length > 0 && (!roomId || !sortedAvailableRooms.some((r) => r.id === roomId))) {
+      setRoomId(sortedAvailableRooms[0].id)
+    }
+  }, [selectedRoomId, sortedAvailableRooms, roomId, isOpen])
+
+  // Fetch all guests on open to enable instant auto-fill and search
+  useEffect(() => {
+    if (isOpen) {
+      getGuests().then(setExistingGuests).catch(console.error)
+      if (initialGuest) {
+        setFullName(initialGuest.fullName || '')
+        setPhone(initialGuest.phone || '')
+        setNationality(initialGuest.nationality || 'Ethiopian')
+        setSelectedGuestId(initialGuest.id || null)
+      } else {
+        setFullName('')
+        setPhone('')
+        setNationality('Ethiopian')
+        setSelectedGuestId(null)
+      }
+      setGuestSearch('')
+      setShowSearchDropdown(false)
+      setError('')
+    }
+  }, [isOpen, initialGuest])
+
+  // Handle auto-matching when phone number is typed
+  function handlePhoneChange(newPhone: string) {
+    setPhone(newPhone)
+    const cleanPhone = newPhone.replace(/\s+/g, '')
+    if (cleanPhone.length >= 4) {
+      const match = existingGuests.find(
+        (g) => g.phone.replace(/\s+/g, '') === cleanPhone
+      )
+      if (match) {
+        setFullName(match.full_name)
+        if (match.nationality) setNationality(match.nationality)
+        setSelectedGuestId(match.id)
+        return
+      }
+    }
+    // If phone was changed away from a match
+    if (selectedGuestId) {
+      setSelectedGuestId(null)
+    }
+  }
+
+  function handleSelectGuest(guest: Guest) {
+    setFullName(guest.full_name)
+    setPhone(guest.phone)
+    if (guest.nationality) setNationality(guest.nationality)
+    setSelectedGuestId(guest.id)
+    setGuestSearch('')
+    setShowSearchDropdown(false)
+  }
+
+  function handleClearSelectedGuest() {
+    setSelectedGuestId(null)
+    setFullName('')
+    setPhone('')
+    setNationality('Ethiopian')
+  }
+
+  const filteredGuests = existingGuests.filter((g) => {
+    if (!guestSearch.trim()) return false
+    const q = guestSearch.toLowerCase()
+    return (
+      g.full_name.toLowerCase().includes(q) ||
+      g.phone.includes(q) ||
+      g.id_number.toLowerCase().includes(q)
+    )
+  }).slice(0, 6)
+
+  const selectedGuestObj = selectedGuestId ? existingGuests.find((g) => g.id === selectedGuestId) : null
+
+  const selectedRoom = availableRooms.find((r) => r.id === roomId)
+  const roomPricePerNight = Number(selectedRoom?.price || 0)
+
+  // Calculate stay duration & expected amount by night
+  const arr = new Date(arrivalDate)
+  const dep = new Date(checkoutDate)
+  const diffDays = Math.round((dep.getTime() - arr.getTime()) / (1000 * 60 * 60 * 24))
+  const resNights = Math.max(1, isNaN(diffDays) ? 1 : diffDays)
+  const calculatedExpectedAmount = resNights * roomPricePerNight
+  const durationDescription = t('common.durationNights', {
+    nights: resNights,
+    label: resNights > 1 ? t('common.nights') : t('common.night'),
+    rate: formatMoney(roomPricePerNight),
+  })
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!roomId) {
+      setError(t('reservation.errSelectRoom'))
+      return
+    }
+
+    const arr = new Date(arrivalDate)
+    const dep = new Date(checkoutDate)
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    if (arr < startOfToday) {
+      setError(t('reservation.errPastArrival'))
+      return
+    }
+    if (dep <= arr) {
+      setError(t('reservation.errCheckoutAfter'))
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      let guestId: number
+
+      if (selectedGuestId) {
+        guestId = selectedGuestId
+      } else {
+        if (!fullName.trim() || !phone.trim()) {
+          setError(t('common.errFillNamePhone'))
+          setLoading(false)
+          return
+        }
+        // Check once more in existing guests by exact phone match to prevent duplicates
+        const existing = existingGuests.find(
+          (g) => g.phone.replace(/\s+/g, '') === phone.replace(/\s+/g, '')
+        )
+        if (existing) {
+          guestId = existing.id
+        } else {
+          const newGuest = await createGuest({
+            full_name: fullName.trim(),
+            phone: phone.trim(),
+            id_number: 'PENDING_ON_ARRIVAL',
+            nationality: nationality.trim() || 'Ethiopian',
+          })
+          guestId = newGuest.id
+        }
+      }
+
+      await createReservation({
+        guest_id: guestId,
+        room_id: roomId,
+        expected_arrival: arr.toISOString(),
+        expected_checkout: dep.toISOString(),
+        expected_amount: calculatedExpectedAmount,
+        reason: 'Reservation',
+      })
+
+      // Reset form
+      setFullName('')
+      setPhone('')
+      setSelectedGuestId(null)
+      onSuccess()
+      onClose()
+    } catch (err: unknown) {
+      setError(getApiError(err, t('reservation.errSubmit')))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={t('res.new')} size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Room selection glance */}
+        <div className="rounded-2xl bg-neutral-50 p-3.5 border border-neutral-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#FF385C]/10 text-[#FF385C] flex items-center justify-center font-bold text-sm">
+              <Building2 size={16} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">{t('reservation.selectedRoom')}</p>
+              <p className="text-sm font-bold text-neutral-900">
+                {selectedRoom ? t('reservation.roomType', { room: selectedRoom.room_number, type: selectedRoom.room_type }) : t('reservation.chooseRoom')}
+              </p>
+            </div>
+          </div>
+          {selectedRoom && (
+            <div className="text-right">
+              <span className="text-xs text-neutral-500">{t('reservation.rate')}</span>
+              <p className="text-sm font-bold text-neutral-900">{formatMoney(Number(selectedRoom.price))} {t('common.perNight')}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Room & Dates */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
+              {t('reservation.availableRoom')} *
+            </label>
+            <select
+              value={roomId}
+              onChange={(e) => setRoomId(Number(e.target.value))}
+              required
+              className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm bg-white text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C]"
+            >
+              {sortedAvailableRooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  {t('reservation.optionRoom', { room: room.room_number, type: room.room_type, rate: formatMoney(Number(room.price)) })}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
+              {t('reservation.expectedArrival')} *
+            </label>
+            <input
+              type="datetime-local"
+              required
+              value={arrivalDate}
+              min={todayLocalDateString() + 'T00:00'}
+              onChange={(e) => setArrivalDate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
+              {t('reservation.expectedCheckout')} *
+            </label>
+            <input
+              type="datetime-local"
+              required
+              value={checkoutDate}
+              min={arrivalDate}
+              onChange={(e) => setCheckoutDate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C]"
+            />
+          </div>
+        </div>
+
+        {/* Calculation badge */}
+        <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-blue-50/80 border border-blue-200 text-xs">
+          <span className="text-blue-900 font-medium">{t('reservation.durationTotal')}</span>
+          <span className="font-bold text-blue-950 bg-white px-2.5 py-1 rounded-lg border border-blue-200">
+            {durationDescription} = {formatMoney(calculatedExpectedAmount)}
+          </span>
+        </div>
+
+        {/* Guest Information with instant auto-fetch & pre-fill */}
+        <div className="border-t border-neutral-100 pt-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-700">
+              {t('common.guestInformation')}
+            </h4>
+            {selectedGuestObj && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span>{t('reservation.existingGuest')}</span>
+                <button
+                  type="button"
+                  onClick={handleClearSelectedGuest}
+                  className="text-emerald-800 hover:text-rose-600 font-bold ml-1 text-xs cursor-pointer"
+                  title={t('reservation.clearGuest')}
+                >
+                  ✕
+                </button>
+              </span>
+            )}
+          </div>
+
+          {/* Quick search input */}
+          <div className="relative">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder={t('reservation.searchPlaceholder')}
+                value={guestSearch}
+                onChange={(e) => {
+                  setGuestSearch(e.target.value)
+                  setShowSearchDropdown(true)
+                }}
+                onFocus={() => setShowSearchDropdown(true)}
+                className="w-full rounded-xl border border-neutral-200 px-3.5 py-2 text-xs bg-neutral-50/70 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#FF385C]"
+              />
+              {guestSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuestSearch('')
+                    setShowSearchDropdown(false)
+                  }}
+                  className="absolute right-3 top-2 text-xs text-neutral-400 hover:text-neutral-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {showSearchDropdown && filteredGuests.length > 0 && (
+              <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-xl border border-neutral-200 shadow-lg py-1 divide-y divide-neutral-100 max-h-48 overflow-y-auto">
+                {filteredGuests.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => handleSelectGuest(g)}
+                    className="w-full text-left px-3.5 py-2 text-xs hover:bg-[#FF385C]/5 flex items-center justify-between transition cursor-pointer"
+                  >
+                    <div>
+                      <span className="font-bold text-neutral-900">{g.full_name}</span>
+                      <span className="text-neutral-500 ml-2">📱 {g.phone}</span>
+                    </div>
+                    <span className="text-[11px] text-neutral-400 font-mono">
+                      {g.id_number}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              label={`${t('common.guestFullName')} *`}
+              placeholder={t('reservation.placeholderGuestName')}
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+            <div>
+              <Input
+                label={`${t('common.phoneNumber')} *`}
+                placeholder={t('reservation.placeholderPhone')}
+                required
+                value={phone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                {t('reservation.phoneHelper')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 border border-rose-200 flex items-center gap-2">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <Button variant="ghost" type="button" onClick={onClose} disabled={loading}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="primary" type="submit" isLoading={loading} className="gap-2">
+            <Calendar size={16} />
+            {loading ? t('reservation.creating') : t('reservation.confirm')}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}

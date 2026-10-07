@@ -1,0 +1,385 @@
+import { useState, useEffect, useCallback } from 'react'
+import {
+  CalendarPlus,
+  CreditCard,
+  DoorClosed,
+  KeyRound,
+  Undo2,
+} from '../../components/common/MaterialIcon'
+import { PageHeader } from '../../components/common/PageHeader'
+import { Button } from '../../components/common/Button'
+import { Input } from '../../components/common/Input'
+import { Badge } from '../../components/common/Badge'
+import { Table, type TableColumn } from '../../components/common/Table'
+import { ExtendStayModal } from '../../components/modals/ExtendStayModal'
+import { RecordPaymentModal } from '../../components/modals/RecordPaymentModal'
+import { CheckOutModal } from '../../components/modals/CheckOutModal'
+import { VoidCheckInModal } from '../../components/modals/VoidCheckInModal'
+import { CheckInModal } from '../../components/modals/CheckInModal'
+import { getStays, getStayFinancialSummary } from '../../api/stays'
+import { getRooms } from '../../api/rooms'
+import { getGuests } from '../../api/guests'
+import { useAuth } from '../../hooks/useAuth'
+import { useI18n } from '../../i18n'
+import type { Stay, Room, Guest, FinancialSummary } from '../../types/api'
+
+interface StayWithDetails extends Stay {
+  guest?: Guest
+  room?: Room
+  summary?: FinancialSummary
+}
+
+export function StaysPage() {
+  const { user } = useAuth()
+  const { t, formatDate, formatNumber, formatMoney } = useI18n()
+  const canCheckInOut = user?.role === 'RECEPTION'
+  const [stays, setStays] = useState<StayWithDetails[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filterStatus, setFilterStatus] = useState<string>('CHECKED_IN')
+  const [search, setSearch] = useState('')
+
+  // Modals state
+  const [extendStayItem, setExtendStayItem] = useState<StayWithDetails | null>(null)
+  const [paymentStayItem, setPaymentStayItem] = useState<StayWithDetails | null>(null)
+  const [checkoutStayItem, setCheckoutStayItem] = useState<StayWithDetails | null>(null)
+  const [voidStayItem, setVoidStayItem] = useState<StayWithDetails | null>(null)
+  const [checkInOpen, setCheckInOpen] = useState(false)
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [staysData, roomsData, guestsData] = await Promise.all([
+        getStays(),
+        getRooms(),
+        getGuests().catch(() => []),
+      ])
+
+      const rMap = new Map(roomsData.map((r) => [r.id, r]))
+      const gMap = new Map(guestsData.map((g) => [g.id, g]))
+
+      // Load financial summaries for checked-in stays
+      const withDetails: StayWithDetails[] = await Promise.all(
+        staysData.map(async (stay) => {
+          let summary: FinancialSummary | undefined
+          if (stay.status === 'CHECKED_IN') {
+            try {
+              summary = await getStayFinancialSummary(stay.id)
+            } catch {
+              // ignore summary error
+            }
+          }
+          return {
+            ...stay,
+            room: rMap.get(stay.room_id),
+            guest: gMap.get(stay.guest_id),
+            summary,
+          }
+        })
+      )
+
+      setStays(withDetails)
+      setRooms(roomsData)
+    } catch (err) {
+      console.error('Failed to fetch stays:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  const availableRooms = rooms.filter((r) => r.status === 'AVAILABLE')
+
+  const filteredStays = stays.filter((s) => {
+    const matchesFilter = filterStatus === 'ALL' || s.status === filterStatus
+    const guestName = s.guest?.full_name || ''
+    const roomNum = s.room?.room_number || ''
+    const matchesSearch =
+      guestName.toLowerCase().includes(search.toLowerCase()) ||
+      roomNum.includes(search) ||
+      String(s.id).includes(search)
+    return matchesFilter && matchesSearch
+  })
+
+  const checkedInCount = stays.filter((s) => s.status === 'CHECKED_IN').length
+  const completedCount = stays.filter((s) => s.status === 'CHECKED_OUT').length
+  const voidedCount = stays.filter((s) => s.status === 'VOIDED').length
+
+  const columns: TableColumn<StayWithDetails>[] = [
+    {
+      key: 'id',
+      header: t('stays.stayNo'),
+      render: (s) => <span className="font-mono text-xs font-bold text-neutral-900">#{s.id}</span>,
+    },
+    {
+      key: 'room',
+      header: t('common.room'),
+      render: (s) => (
+        <div>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-[#FF385C]/10 text-[#FF385C]">
+            {t('common.room')} {s.room?.room_number || s.room_id}
+          </span>
+          <p className="text-[11px] text-neutral-500 mt-0.5">{s.room?.room_type || t('stays.standard')}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'guest',
+      header: t('common.guest'),
+      render: (s) => (
+        <div>
+          <p className="font-bold text-neutral-900 text-sm">{s.guest?.full_name || t('logbook.guestNo', { id: s.guest_id })}</p>
+          <p className="text-xs text-neutral-500">{s.guest?.phone || t('common.noPhone')}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'timeline',
+      header: t('stays.timeline'),
+      render: (s) => {
+        const inDate = formatDate(s.check_in_at, 'datetime')
+        const outDate = formatDate(s.expected_checkout, 'datetime')
+        return (
+          <div className="text-xs text-neutral-700">
+            <p className="font-medium text-neutral-900">{t('stays.inLabel', { date: inDate })}</p>
+            <p className="text-neutral-500">{t('stays.expOutLabel', { date: outDate })}</p>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'folio',
+      header: t('stays.folioBalance'),
+      render: (s) => {
+        if (!s.summary) {
+          return <span className="text-xs text-neutral-400">—</span>
+        }
+        const bal = Number(s.summary.balance)
+        const total = Number(s.summary.total_due)
+        const paid = Number(s.summary.total_paid)
+
+        return (
+          <div className="text-xs">
+            <div className="flex items-center gap-1.5 font-bold">
+              <span className={bal > 0 ? 'text-[#FF385C]' : 'text-emerald-600'}>
+                {bal > 0 ? t('stays.due', { amount: formatNumber(bal) }) : t('stays.settledWithAmount', { amount: formatMoney(0) })}
+              </span>
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-0.5">
+              {t('stays.summary', { total: formatNumber(total), paid: formatNumber(paid) })}
+            </p>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'status',
+      header: t('common.status'),
+      render: (s) => (
+        <Badge
+          tone={s.status === 'CHECKED_IN' ? 'occupied' : s.status === 'VOIDED' ? 'red' : 'neutral'}
+          size="sm"
+        >
+          {s.status === 'CHECKED_IN' ? t('stayStatus.inHouse') : s.status === 'VOIDED' ? t('stayStatus.voided') : t('stayStatus.checkedOut')}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: t('common.actions'),
+      align: 'right',
+      render: (s) => {
+        if (s.status === 'CHECKED_IN') {
+          return (
+            <div className="flex items-center justify-end gap-1.5">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => setExtendStayItem(s)}
+                className="gap-1"
+                title={t('stays.extendHint')}
+              >
+                <CalendarPlus size={14} />
+                {t('stays.extend')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => setPaymentStayItem(s)}
+                className="gap-1"
+                title={t('stays.recordPayment')}
+              >
+                <CreditCard size={14} />
+                {t('stays.pay')}
+              </Button>
+              {canCheckInOut && (
+                <>
+                  <Button
+                    variant="primary"
+                    size="xs"
+                    onClick={() => setCheckoutStayItem(s)}
+                    className="gap-1 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                    title={t('stays.checkoutHint')}
+                  >
+                    <DoorClosed size={14} />
+                    {t('logbook.checkOut')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setVoidStayItem(s)}
+                    className="gap-1 text-rose-600 hover:bg-rose-50 hover:text-rose-700 px-2"
+                    title={t('common.voidHint')}
+                  >
+                    <Undo2 size={14} />
+                    {t('common.void')}
+                  </Button>
+                </>
+              )}
+            </div>
+          )
+        }
+        return <span className="text-xs text-neutral-400">—</span>
+      },
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={t('stays.pageTitle')}
+        subtitle={t('stays.subtitle')}
+        action={
+          canCheckInOut && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setCheckInOpen(true)}
+              className="gap-1.5"
+            >
+              <KeyRound size={14} />
+              {t('stays.checkInGuest')}
+            </Button>
+          )
+        }
+      />
+
+      {/* Filter Tabs & Search */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-neutral-200">
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { id: 'CHECKED_IN', label: t('stays.inHouseActive'), count: checkedInCount },
+            { id: 'CHECKED_OUT', label: t('stays.completed'), count: completedCount },
+            { id: 'VOIDED', label: t('stays.voidedCancelled'), count: voidedCount },
+            { id: 'ALL', label: t('stays.allStays'), count: stays.length },
+          ].map((tab) => {
+            const active = filterStatus === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setFilterStatus(tab.id)}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
+                  active
+                    ? 'bg-neutral-900 text-white shadow-xs dark:bg-white dark:text-neutral-900'
+                    : 'bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    active ? 'bg-neutral-700 text-white dark:bg-neutral-200 dark:text-neutral-900' : 'bg-neutral-100 text-neutral-600'
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="w-full sm:w-64">
+          <Input
+            placeholder={t('stays.searchPlaceholder')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-xs">
+        <Table
+          columns={columns}
+          data={filteredStays}
+          keyExtractor={(s) => s.id}
+          isLoading={loading}
+          loadingLabel={t('stays.loadingStays')}
+          emptyMessage={t('stays.emptySearch')}
+        />
+      </div>
+
+      {/* Modals */}
+      <ExtendStayModal
+        isOpen={Boolean(extendStayItem)}
+        onClose={() => setExtendStayItem(null)}
+        stay={extendStayItem}
+        guestName={extendStayItem?.guest?.full_name}
+        roomNumber={extendStayItem?.room?.room_number}
+        roomPrice={extendStayItem?.room ? Number(extendStayItem.room.price) : undefined}
+        onSuccess={() => fetchData()}
+      />
+
+      <RecordPaymentModal
+        isOpen={Boolean(paymentStayItem)}
+        onClose={() => setPaymentStayItem(null)}
+        stayId={paymentStayItem?.id || null}
+        guestName={paymentStayItem?.guest?.full_name}
+        roomNumber={paymentStayItem?.room?.room_number}
+        onSuccess={() => fetchData()}
+      />
+
+      <CheckOutModal
+        isOpen={Boolean(checkoutStayItem)}
+        onClose={() => setCheckoutStayItem(null)}
+        stay={checkoutStayItem}
+        guestName={checkoutStayItem?.guest?.full_name}
+        roomNumber={checkoutStayItem?.room?.room_number}
+        onOpenVoidModal={(stay) => setVoidStayItem(stay as StayWithDetails)}
+        onSuccess={(checkedOutStay) => {
+          const s = checkedOutStay || checkoutStayItem
+          if (s) {
+            setStays((prev) => prev.filter((item) => item.id !== s.id))
+            setRooms((prev) =>
+              prev.map((r) =>
+                r.id === s.room_id
+                  ? { ...r, status: 'AVAILABLE', available_after: null }
+                  : r
+              )
+            )
+          }
+          fetchData()
+        }}
+      />
+
+      <VoidCheckInModal
+        isOpen={Boolean(voidStayItem)}
+        onClose={() => setVoidStayItem(null)}
+        stay={voidStayItem}
+        guestName={voidStayItem?.guest?.full_name}
+        roomNumber={voidStayItem?.room?.room_number}
+        onSuccess={() => fetchData()}
+      />
+
+      <CheckInModal
+        isOpen={checkInOpen}
+        onClose={() => setCheckInOpen(false)}
+        availableRooms={availableRooms}
+        allRooms={rooms}
+        onSuccess={() => fetchData()}
+      />
+    </div>
+  )
+}

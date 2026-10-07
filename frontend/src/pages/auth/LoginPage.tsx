@@ -1,0 +1,271 @@
+import { useState } from 'react'
+import { Eye, EyeOff, HelpCircle, LockKeyhole, ShieldCheck, UserRound } from '../../components/common/MaterialIcon'
+import { useAuth } from '../../hooks/useAuth'
+import { useI18n } from '../../i18n'
+import { Button } from '../../components/common/Button'
+import { Modal } from '../../components/common/Modal'
+
+export function LoginPage() {
+  const { login, user, isAuthenticated, logout } = useAuth()
+  const { t } = useI18n()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError('')
+    setSubmitting(true)
+    try {
+      await login(username.trim(), password)
+      window.location.href = '/dashboard'
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : t('login.unableToSignIn')
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#FFFFFF] flex flex-col justify-between selection:bg-[#FFF0F2] selection:text-[#FF385C]">
+      {/* Top Header */}
+      <header className="w-full h-18 sm:h-20 px-6 sm:px-12 flex items-center justify-between border-b border-[#EEEEEE] bg-white">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#FF385C] flex items-center justify-center text-white shadow-xs">
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+          </div>
+          <div>
+            <span className="block text-base font-bold text-[#222222] tracking-tight leading-tight">
+              Family Guest House
+            </span>
+            <span className="block text-[11px] font-medium text-[#717171]">
+              {t('nav.managementSystem')}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setHelpOpen(true)}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#717171] hover:text-[#222222] transition-colors py-2 px-3 rounded-full hover:bg-[#F7F7F7]"
+        >
+          <HelpCircle size={15} />
+          <span>{t('login.helpSupport')}</span>
+        </button>
+      </header>
+
+      {/* Main Centered Login Section */}
+      <main className="flex-1 flex items-center justify-center p-6 py-12 sm:py-16">
+        <div className="w-full max-w-md animate-fade-in">
+          <div className="bg-white rounded-3xl border border-[#DDDDDD] p-7 sm:p-10 shadow-[0_4px_24px_rgba(0,0,0,0.04)]">
+            {isAuthenticated && user ? (
+              /* Already Signed In View */
+              <div className="text-center space-y-5">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EBF9EB] text-[#008A05] text-xs font-semibold">
+                  <ShieldCheck size={13} />
+                  <span>{t('login.currentlySignedIn')}</span>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-[#222222] tracking-tight">
+                    {t('login.welcomeBackName', { name: user.full_name })}
+                  </h1>
+                  <p className="text-xs text-[#717171] mt-1.5">
+                    {t('login.signedInAs', {
+                      role: user.role === 'ADMIN' ? t('role.administrator') : t('role.receptionDesk'),
+                    })}{' '}
+                    (@{user.username}).
+                  </p>
+                </div>
+                <div className="space-y-2.5 pt-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="lg"
+                    className="w-full h-11 text-xs font-semibold rounded-xl"
+                    onClick={() => { window.location.href = '/dashboard' }}
+                  >
+                    {t('login.continueToDashboard')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="w-full h-11 text-xs font-semibold rounded-xl text-[#C13515] border-[#DDDDDD] hover:bg-[#FFF7F5]"
+                    onClick={() => logout()}
+                  >
+                    {t('login.signOutSwitchUser')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* Normal Sign In Form */
+              <>
+                {/* Greeting & Header */}
+                <div className="text-center mb-8">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFF0F2] text-[#FF385C] text-xs font-semibold mb-3">
+                    <ShieldCheck size={13} />
+                    <span>{t('login.staffPortal')}</span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-[#222222] tracking-tight">
+                    {t('login.welcomeBack')}
+                  </h1>
+                  <p className="text-sm text-[#717171] mt-1.5 leading-relaxed">
+                    {t('login.signInPrompt')}
+                  </p>
+                </div>
+
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  {/* Username field */}
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="username"
+                      className="block text-xs font-semibold text-[#222222]"
+                    >
+                      {t('login.phoneNumber')}
+                    </label>
+                    <div className="relative flex items-center h-12 rounded-xl border border-[#DDDDDD] hover:border-[#B0B0B0] focus-within:border-[#222222] focus-within:ring-1 focus-within:ring-[#222222] bg-white px-3.5 transition-all">
+                      <UserRound size={17} className="text-[#717171] shrink-0 mr-2.5" />
+                      <input
+                        id="username"
+                        required
+                        autoFocus
+                        autoComplete="tel"
+                        type="tel"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value.replace(/[^0-9+]/g, ''))}
+                        placeholder="e.g. 0908296773"
+                        className="w-full bg-transparent text-sm text-[#222222] placeholder:text-[#999999] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password field */}
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="password"
+                      className="block text-xs font-semibold text-[#222222]"
+                    >
+                      {t('login.password')}
+                    </label>
+                    <div className="relative flex items-center h-12 rounded-xl border border-[#DDDDDD] hover:border-[#B0B0B0] focus-within:border-[#222222] focus-within:ring-1 focus-within:ring-[#222222] bg-white px-3.5 transition-all">
+                      <LockKeyhole size={17} className="text-[#717171] shrink-0 mr-2.5" />
+                      <input
+                        id="password"
+                        required
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder={t('login.enterPassword')}
+                        className="w-full bg-transparent text-sm text-[#222222] placeholder:text-[#999999] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="p-1 text-[#717171] hover:text-[#222222] focus:outline-none transition-colors cursor-pointer"
+                        aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                      >
+                        {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Error Message */}
+                  {error && (
+                    <div
+                      role="alert"
+                      className="p-3.5 rounded-xl bg-[#FFF7F5] border border-[#F2D1CA] text-xs text-[#C13515] leading-relaxed flex items-start gap-2.5"
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#C13515] mt-1.5 shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  {/* Submit Button */}
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="lg"
+                    loading={submitting}
+                    className="w-full h-12 text-sm font-semibold rounded-xl mt-2"
+                  >
+                    {submitting ? t('login.signingIn') : t('login.signInToGH')}
+                  </Button>
+                </form>
+              </>
+            )}
+
+            {/* Note */}
+            <div className="mt-8 pt-6 border-t border-[#F0F0F0] text-center">
+              <span className="text-xs text-[#717171] flex items-center justify-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#008A05]" />
+                {t('login.authorizedOnly')}
+              </span>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="w-full py-6 px-6 text-center text-xs text-[#717171] border-t border-[#EEEEEE]">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <span>© {new Date().getFullYear()} Family Guest House. {t('login.allRightsReserved')}</span>
+          <div className="flex items-center gap-4 text-xs text-[#717171]">
+            <span>{t('login.privacy')}</span>
+            <span>·</span>
+            <span>{t('login.terms')}</span>
+            <span>·</span>
+            <span>{t('login.managementSystem')}</span>
+          </div>
+        </div>
+      </footer>
+
+      {/* Help Modal */}
+      <Modal
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title={t('login.needHelp')}
+        description={t('login.helpDescription')}
+      >
+        <div className="space-y-4 text-xs text-[#717171] leading-relaxed">
+          <p>
+            <strong className="text-[#222222]">{t('login.defaultAccounts')}</strong>
+            <br />
+            • {t('login.adminUsername')} <code className="bg-[#F7F7F7] px-1.5 py-0.5 rounded font-mono">admin</code>
+            <br />
+            • {t('login.receptionUsername')} <code className="bg-[#F7F7F7] px-1.5 py-0.5 rounded font-mono">reception</code>
+          </p>
+          <p>
+            <strong className="text-[#222222]">{t('login.forgotPassword')}</strong>
+            <br />
+            {t('login.forgotHint')}
+          </p>
+          <div className="pt-2 border-t border-[#F0F0F0]">
+            <p className="text-[11px] text-[#999999]">
+              {t('login.frontDeskInternal')}
+            </p>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}

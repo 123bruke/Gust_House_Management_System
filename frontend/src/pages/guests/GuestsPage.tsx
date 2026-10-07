@@ -1,0 +1,395 @@
+import { useState, useEffect, useCallback } from 'react'
+import {
+  Plus,
+  KeyRound,
+  Phone,
+  Globe,
+  AlertCircle,
+  UserCheck,
+} from '../../components/common/MaterialIcon'
+import { PageHeader } from '../../components/common/PageHeader'
+import { Button } from '../../components/common/Button'
+import { Input } from '../../components/common/Input'
+import { Modal } from '../../components/common/Modal'
+import { Table, type TableColumn } from '../../components/common/Table'
+import { CheckInModal } from '../../components/modals/CheckInModal'
+import { IdPhotoCapture } from '../../components/common/IdPhotoCapture'
+import { getGuests, createGuest } from '../../api/guests'
+import { getRooms } from '../../api/rooms'
+import { useI18n } from '../../i18n'
+import type { Guest, Room } from '../../types/api'
+
+export function GuestsPage() {
+  const { t, formatDate } = useI18n()
+  const [guests, setGuests] = useState<Guest[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+
+  // Modals
+  const [createGuestOpen, setCreateGuestOpen] = useState(false)
+  const [checkInOpen, setCheckInOpen] = useState(false)
+  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null)
+  const [viewPhotoUrl, setViewPhotoUrl] = useState<string | null>(null)
+
+  // New Guest Form
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [idNumber, setIdNumber] = useState('')
+  const [idPhoto, setIdPhoto] = useState<string | null>(null)
+  const [nationality, setNationality] = useState('Ethiopian')
+  const [notes, setNotes] = useState('')
+  const [formLoading, setFormLoading] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [guestsData, roomsData] = await Promise.all([getGuests(), getRooms()])
+      setGuests(guestsData)
+      setRooms(roomsData)
+    } catch (err) {
+      console.error('Failed to fetch guests:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  const availableRooms = rooms.filter((r) => r.status === 'AVAILABLE')
+
+  const filteredGuests = guests
+    .filter((g) => {
+      const q = search.toLowerCase()
+      return (
+        g.full_name.toLowerCase().includes(q) ||
+        g.phone.toLowerCase().includes(q) ||
+        g.id_number.toLowerCase().includes(q) ||
+        (g.nationality || '').toLowerCase().includes(q)
+      )
+    })
+    .sort((a, b) => a.id - b.id)
+
+  async function handleCreateGuest(e: React.FormEvent) {
+    e.preventDefault()
+    if (!fullName.trim() || !phone.trim() || !idNumber.trim()) {
+      setFormError(t('guests.validationRequired'))
+      return
+    }
+
+    setFormLoading(true)
+    setFormError('')
+
+    try {
+      await createGuest({
+        full_name: fullName.trim(),
+        phone: phone.trim(),
+        id_number: idNumber.trim(),
+        id_photo_url: idPhoto || undefined,
+        nationality: nationality.trim() || undefined,
+        notes: notes.trim() || undefined,
+      })
+
+      setCreateGuestOpen(false)
+      setFullName('')
+      setPhone('')
+      setIdNumber('')
+      setIdPhoto(null)
+      setNotes('')
+      fetchData()
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        t('guests.registerFailed')
+      setFormError(msg)
+    } finally {
+      setFormLoading(false)
+    }
+  }
+
+  const columns: TableColumn<Guest>[] = [
+    {
+      key: 'id',
+      header: t('common.idNumber'),
+      render: (g) => <span className="font-mono text-xs font-semibold text-neutral-500">#{g.id}</span>,
+    },
+    {
+      key: 'full_name',
+      header: t('guests.fullName'),
+      render: (g) => (
+        <div className="flex items-center gap-2.5">
+          {g.id_photo_url ? (
+            <div
+              onClick={(e) => {
+                e.stopPropagation()
+                setViewPhotoUrl(g.id_photo_url || null)
+              }}
+              className="w-8 h-8 rounded-full overflow-hidden border border-emerald-400 bg-neutral-100 cursor-pointer shadow-2xs hover:scale-105 transition shrink-0"
+              title={t('guests.viewIdPhotoHint')}
+            >
+              <img src={g.id_photo_url} alt={g.full_name} className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center font-bold text-xs text-neutral-700 shrink-0">
+              {g.full_name.slice(0, 2).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <p className="font-bold text-sm text-neutral-900">{g.full_name}</p>
+            <p className="text-xs text-neutral-500 flex items-center gap-1">
+              <Globe size={12} /> {g.nationality || t('guests.defaultNationality')}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'contact',
+      header: t('common.phoneNumber'),
+      render: (g) => (
+        <span className="text-xs font-medium text-neutral-800 flex items-center gap-1.5">
+          <Phone size={14} className="text-neutral-400" />
+          {g.phone}
+        </span>
+      ),
+    },
+    {
+      key: 'id_number',
+      header: t('guests.idPassport'),
+      render: (g) => (
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs font-semibold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md">
+            {g.id_number}
+          </span>
+          {g.id_photo_url && (
+            <button
+              type="button"
+              onClick={() => setViewPhotoUrl(g.id_photo_url || null)}
+              className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
+              title={t('guests.viewPhotoHint')}
+            >
+              {t('guests.photo')}
+            </button>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'notes',
+      header: t('guests.notesPreferences'),
+      render: (g) => (
+        <span className="text-xs text-neutral-500 italic max-w-xs truncate block">
+          {g.notes || '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'created_at',
+      header: t('guests.registered'),
+      render: (g) => {
+        const d = formatDate(g.created_at, 'short')
+        return <span className="text-xs text-neutral-500">{d}</span>
+      },
+    },
+    {
+      key: 'actions',
+      header: t('common.actions'),
+      align: 'right',
+      render: (g) => (
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => {
+            setSelectedGuest(g)
+            setCheckInOpen(true)
+          }}
+          className="gap-1 text-xs"
+        >
+          <KeyRound size={14} />
+          {t('logbook.checkIn')}
+        </Button>
+      ),
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={t('guests.directory')}
+        action={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setCreateGuestOpen(true)}
+            className="gap-1.5"
+          >
+            <Plus size={14} />
+            {t('guests.register')}
+          </Button>
+        }
+      />
+
+      {/* Search */}
+      <div className="w-full sm:w-80">
+        <Input
+          placeholder={t('guests.searchPlaceholder')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      {/* Guests Table */}
+      <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-xs">
+        <Table
+          columns={columns}
+          data={filteredGuests}
+          keyExtractor={(g) => g.id}
+          isLoading={loading}
+          loadingLabel={t('guests.loadingRecords')}
+          emptyMessage={t('guests.emptySearch')}
+        />
+      </div>
+
+      {/* Register Guest Modal */}
+      <Modal
+        isOpen={createGuestOpen}
+        onClose={() => setCreateGuestOpen(false)}
+        title={t('guests.registerNew')}
+        size="md"
+      >
+        <form onSubmit={handleCreateGuest} className="space-y-4">
+          <Input
+            label={t('guests.fullNameRequired')}
+            placeholder={t('guests.fullNamePlaceholder')}
+            required
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label={t('guests.phoneRequired')}
+              placeholder={t('guests.phonePlaceholder')}
+              required
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+            <Input
+              label={t('guests.idPassportRequired')}
+              placeholder={t('guests.idPassportPlaceholder')}
+              required
+              value={idNumber}
+              onChange={(e) => setIdNumber(e.target.value)}
+            />
+          </div>
+
+          <Input
+            label={t('common.nationality')}
+            placeholder={t('guests.defaultNationality')}
+            value={nationality}
+            onChange={(e) => setNationality(e.target.value)}
+          />
+
+          <IdPhotoCapture
+            value={idPhoto}
+            onChange={setIdPhoto}
+            label={t('guests.idPhotoLabel')}
+            helperText={t('guests.idPhotoHelper')}
+          />
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
+              {t('guests.guestNotes')}
+            </label>
+            <textarea
+              rows={2}
+              placeholder={t('guests.notesPlaceholder')}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 px-3.5 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C]"
+            />
+          </div>
+
+          {formError && (
+            <div className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 border border-rose-200 flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                setCreateGuestOpen(false)
+                setIdPhoto(null)
+              }}
+              disabled={formLoading}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button variant="primary" type="submit" isLoading={formLoading} className="gap-2">
+              <UserCheck size={16} />
+              {formLoading ? t('guests.saving') : t('guests.registerProfile')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Guest Document Photo Inspect Modal */}
+      <Modal
+        isOpen={!!viewPhotoUrl}
+        onClose={() => setViewPhotoUrl(null)}
+        title={t('guests.documentTitle')}
+        maxWidth="lg"
+      >
+        <div className="space-y-4">
+          <div className="max-h-[70vh] overflow-auto rounded-xl border border-neutral-200 bg-neutral-950 flex items-center justify-center p-2">
+            {viewPhotoUrl && (
+              <img
+                src={viewPhotoUrl}
+                alt={t('guests.enlargedDocument')}
+                className="max-h-[65vh] w-auto max-w-full object-contain rounded-lg"
+              />
+            )}
+          </div>
+          <div className="flex justify-end pt-1">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => setViewPhotoUrl(null)}
+            >
+              {t('common.close')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <CheckInModal
+        isOpen={checkInOpen}
+        onClose={() => {
+          setCheckInOpen(false)
+          setSelectedGuest(null)
+        }}
+        availableRooms={availableRooms}
+        initialGuest={
+          selectedGuest
+            ? {
+                fullName: selectedGuest.full_name,
+                phone: selectedGuest.phone,
+                idNumber: selectedGuest.id_number,
+                nationality: selectedGuest.nationality,
+                idPhotoUrl: selectedGuest.id_photo_url,
+              }
+            : undefined
+        }
+        onSuccess={() => fetchData()}
+      />
+    </div>
+  )
+}
