@@ -131,6 +131,7 @@ export interface Payment {
   stay_id: number
   amount: string
   currency: string
+  exchange_rate: string | null
   payment_method: string
   status: string
   reference: string | null

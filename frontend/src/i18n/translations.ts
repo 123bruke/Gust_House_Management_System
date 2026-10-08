@@ -726,6 +726,18 @@ export const translations: Record<string, { am: string; en: string }> = {
     am: 'ይህ ክፍያ በ{currency} ተለይቶ ይመዘገባል፤ የ{propertyCurrency} ቀሪ ሂሳብን አይቀይርም።',
     en: 'This payment is recorded separately in {currency}; it does not change the {propertyCurrency} balance.',
   },
+  'payment.exchangeRate': {
+    am: 'የምንዛሬ ዋጋ ({currency} ለ1 ዶላር)',
+    en: 'Exchange rate ({currency} per USD)',
+  },
+  'payment.exchangeRateHelper': {
+    am: 'ለ1 ዶላር የሚሆነውን {currency} ያስገቡ። የክፍያ መጠኑ በራስ-ሰር ይቀየራል፤ ዋጋውም ከክፍያው ጋር ይመዘገባል።',
+    en: 'Enter how many {currency} equal one USD. The payment amount converts automatically, and this rate is saved with the payment.',
+  },
+  'payment.errExchangeRate': {
+    am: 'ከዜሮ በላይ የሆነ የምንዛሬ ዋጋ ያስገቡ።',
+    en: 'Enter an exchange rate greater than zero.',
+  },
   'payment.alreadyPaid': { am: 'እስካሁን የተከፈለ', en: 'Already Paid' },
   'payment.amountLabel': { am: 'የክፍያ መጠን ({currency})', en: 'Payment Amount ({currency})' },
   'payment.creditLedger': { am: 'በብድር መዝግብ', en: 'Record as Credit' },
