@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Eye, EyeOff, KeyRound, X } from '../common/MaterialIcon'
-import { changeOwnPassword, resetUserPassword } from '../../api/users'
+import { changeOwnAccount, resetUserPassword } from '../../api/users'
 import { getApiError } from '../../api/client'
 import { Button } from '../common/Button'
 import { useI18n } from '../../i18n'
@@ -17,14 +17,25 @@ export function ChangePasswordModal({ user, adminReset = false, onClose, onSaved
   const { t } = useI18n()
   const [newPassword, setNewPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
+  const [username, setUsername] = useState(user.username)
   const [showPasswords, setShowPasswords] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    setUsername(user.username)
+  }, [user.id, user.username])
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     setError('')
-    if (newPassword !== confirmation) {
+    const passwordChanged = newPassword.length > 0
+    const usernameChanged = username.trim() !== user.username
+    if (!adminReset && !passwordChanged && !usernameChanged) {
+      setError(t('password.noChanges'))
+      return
+    }
+    if (passwordChanged && newPassword !== confirmation) {
       setError(t('password.mismatch'))
       return
     }
@@ -32,7 +43,10 @@ export function ChangePasswordModal({ user, adminReset = false, onClose, onSaved
     try {
       const updated = adminReset
         ? await resetUserPassword(user.id, newPassword)
-        : await changeOwnPassword(newPassword)
+        : await changeOwnAccount({
+            ...(usernameChanged ? { username: username.trim() } : {}),
+            ...(passwordChanged ? { new_password: newPassword } : {}),
+          })
       onSaved?.(updated)
       onClose()
     } catch (requestError) {
@@ -50,20 +64,35 @@ export function ChangePasswordModal({ user, adminReset = false, onClose, onSaved
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFF0F2] text-[#FF385C]"><KeyRound size={19} /></div>
             <div>
               <h2 id="password-dialog-title" className="text-lg font-bold text-[#222222]">{adminReset ? t('password.setStaffTitle') : t('password.changeTitle')}</h2>
-              <p className="text-xs text-[#717171]">{adminReset ? t('password.setStaffDesc', { name: user.full_name }) : t('password.minHint')}</p>
+              <p className="text-xs text-[#717171]">{adminReset ? t('password.setStaffDesc', { name: user.full_name }) : t('password.accountHint')}</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-[#717171] hover:bg-[#F7F7F7]" aria-label={t('password.closeDialog')}><X size={18} /></button>
         </div>
 
         <div className="mt-6 space-y-4">
+          {!adminReset && (
+            <label className="block text-sm font-medium text-[#222222]">
+              {t('password.username')}
+              <input
+                required
+                minLength={7}
+                maxLength={16}
+                type="tel"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-[#DDDDDD] px-3.5 py-2.5 focus:border-[#FF385C] focus:outline-none focus:ring-2 focus:ring-[#FF385C]/20"
+                autoComplete="username"
+              />
+            </label>
+          )}
           <label className="block text-sm font-medium text-[#222222]">
             {t('password.new')}
-            <input required minLength={6} maxLength={128} type={showPasswords ? 'text' : 'password'} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#DDDDDD] px-3.5 py-2.5 focus:border-[#FF385C] focus:outline-none focus:ring-2 focus:ring-[#FF385C]/20" autoComplete="new-password" />
+            <input required={adminReset} minLength={6} maxLength={128} type={showPasswords ? 'text' : 'password'} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#DDDDDD] px-3.5 py-2.5 focus:border-[#FF385C] focus:outline-none focus:ring-2 focus:ring-[#FF385C]/20" autoComplete="new-password" />
           </label>
           <label className="block text-sm font-medium text-[#222222]">
             {t('password.confirm')}
-            <input required minLength={6} maxLength={128} type={showPasswords ? 'text' : 'password'} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#DDDDDD] px-3.5 py-2.5 focus:border-[#FF385C] focus:outline-none focus:ring-2 focus:ring-[#FF385C]/20" autoComplete="new-password" />
+            <input required={adminReset || newPassword.length > 0} minLength={6} maxLength={128} type={showPasswords ? 'text' : 'password'} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#DDDDDD] px-3.5 py-2.5 focus:border-[#FF385C] focus:outline-none focus:ring-2 focus:ring-[#FF385C]/20" autoComplete="new-password" />
           </label>
           <button type="button" onClick={() => setShowPasswords((visible) => !visible)} className="flex items-center gap-2 text-xs font-medium text-[#717171] hover:text-[#222222]">
             {showPasswords ? <EyeOff size={14} /> : <Eye size={14} />}

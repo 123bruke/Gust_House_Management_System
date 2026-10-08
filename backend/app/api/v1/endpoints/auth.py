@@ -18,6 +18,7 @@ from app.services.auth import (
     issue_access_token,
 )
 from app.services.user import (
+    DuplicateUsernameError,
     InvalidCurrentPasswordError,
     UnauthorizedAdminError,
     UserNotFoundError,
@@ -56,7 +57,17 @@ async def change_password_endpoint(
     current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> UserRead:
-    user = await change_password(session, current_user, new_password=payload.new_password)
+    try:
+        user = await change_password(
+            session,
+            current_user,
+            new_password=payload.new_password,
+            username=payload.username,
+        )
+    except DuplicateUsernameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     return UserRead.model_validate(user)
 
 

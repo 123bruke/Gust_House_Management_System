@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.user import UserRead
 from app.models.user import UserRole
@@ -16,7 +16,23 @@ class LoginRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    new_password: str = Field(min_length=6, max_length=128)
+    username: str | None = Field(
+        default=None, min_length=7, max_length=16, pattern=r"^\+?[0-9]{7,15}$"
+    )
+    new_password: str | None = Field(default=None, min_length=6, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return "".join(character for character in value if character.isdigit())
+
+    @model_validator(mode="after")
+    def require_an_account_change(self) -> "ChangePasswordRequest":
+        if self.username is None and self.new_password is None:
+            raise ValueError("Provide a username or a new password")
+        return self
 
 
 class TokenResponse(BaseModel):

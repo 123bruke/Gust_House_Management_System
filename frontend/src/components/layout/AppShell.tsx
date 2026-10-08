@@ -68,7 +68,7 @@ const navSections: NavSection[] = [
 ]
 
 export function AppShell() {
-  const { user, logout } = useAuth()
+  const { user, logout, updateAuthenticatedUser } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { t, lang, toggleLang, formatDate } = useI18n()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -366,7 +366,11 @@ export function AppShell() {
         </main>
       </div>
       {passwordModalOpen && user && (
-        <ChangePasswordModal user={user} onClose={() => setPasswordModalOpen(false)} />
+        <ChangePasswordModal
+          user={user}
+          onClose={() => setPasswordModalOpen(false)}
+          onSaved={updateAuthenticatedUser}
+        />
       )}
     </div>
   )

@@ -168,6 +168,29 @@ async def test_user_can_change_own_password(client: AsyncClient, users) -> None:
 
 
 @pytest.mark.asyncio
+async def test_user_can_change_own_username_with_shared_phone_login(client: AsyncClient, users) -> None:
+	token = await token_for(client, "reception", "reception-password-123")
+	response = await client.post(
+		"/api/v1/auth/change-password",
+		headers={"Authorization": f"Bearer {token}"},
+		json={"username": "0908296773"},
+	)
+
+	assert response.status_code == 200
+	assert response.json()["username"] == "0908296773"
+	login_response = await client.post(
+		"/api/v1/auth/login",
+		json={
+			"username": "0908296773",
+			"password": "reception-password-123",
+			"role": "RECEPTION",
+		},
+	)
+	assert login_response.status_code == 200
+	assert login_response.json()["user"]["role"] == "RECEPTION"
+
+
+@pytest.mark.asyncio
 async def test_changing_password_requires_a_signed_in_user(client: AsyncClient, users) -> None:
 	response = await client.post(
 		"/api/v1/auth/change-password",

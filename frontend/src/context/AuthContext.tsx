@@ -24,8 +24,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() { clearSession(); setUser(null) }
+  function updateAuthenticatedUser(updatedUser: User) { setUser(updatedUser) }
 
-  return <AuthContext.Provider value={{ user, isLoading, isAuthenticated: Boolean(user), login, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, isLoading, isAuthenticated: Boolean(user), login, updateAuthenticatedUser, logout }}>{children}</AuthContext.Provider>
 }
 
 export { useAuth } from '../hooks/useAuth'

@@ -673,7 +673,7 @@ export function DailyManifestModal({
                 size="sm"
                 onClick={exportCSV}
                 disabled={!filteredItems.length}
-                className="gap-1.5 text-xs text-stone-700 hover:bg-stone-100"
+                className="gap-1.5 text-xs text-neutral-700 hover:bg-neutral-100"
               >
                 <FileSpreadsheet size={14} className="text-emerald-600" />
                 {t('manifest.exportCsv')}
@@ -690,7 +690,7 @@ export function DailyManifestModal({
               <Button
                 onClick={handlePrint}
                 size="sm"
-                className="gap-1.5 bg-stone-900 hover:bg-stone-800 text-white font-medium shadow-sm"
+                className="gap-1.5 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 font-medium shadow-sm"
               >
                 <Printer size={15} />
                 {effectiveType === 'STANDARD' ? t('manifest.printStandard') : t('manifest.printAudit')}

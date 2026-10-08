@@ -342,11 +342,13 @@ export interface PublicChangePasswordPayload {
   username: string
   current_password: string
   new_password: string
+  role?: Role
 }
 
 export interface AdminOverrideResetPayload {
   target_username: string
   new_password: string
+  target_role?: Role
   admin_username: string
   admin_password: string
 }

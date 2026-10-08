@@ -182,10 +182,10 @@ export function DashboardPage() {
       {isAdmin && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#222222]">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
               {t('dash.managementOverview')}
             </h3>
-            <span className="text-xs text-[#717171]">
+            <span className="text-xs text-[var(--ink-muted)]">
               {t('dash.adminOnlySummary')}
             </span>
           </div>

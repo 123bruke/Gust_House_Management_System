@@ -100,19 +100,51 @@ async def change_password(
     session: AsyncSession,
     user: User,
     *,
-    new_password: str,
+    new_password: str | None = None,
+    username: str | None = None,
 ) -> User:
-    user.password_hash = hash_password(new_password)
-    session.add(
-        AuditLog(
-            user_id=user.id,
-            action="STAFF_PASSWORD_CHANGED",
-            entity_type="User",
-            entity_id=user.id,
-            details=json.dumps({"username": user.username}),
+    old_username = user.username
+    if username is not None:
+        clean_username = normalize_phone_number(username)
+        if not 7 <= len(clean_username) <= 15:
+            raise ValueError("User phone number must contain 7 to 15 digits")
+        if clean_username != user.username:
+            repository = UserRepository(session)
+            existing = await repository.get_by_username(
+                clean_username, UserRole(user.role)
+            )
+            if existing is not None and existing.id != user.id:
+                raise DuplicateUsernameError("Username is already in use")
+            user.username = clean_username
+            session.add(
+                AuditLog(
+                    user_id=user.id,
+                    action="STAFF_USERNAME_CHANGED",
+                    entity_type="User",
+                    entity_id=user.id,
+                    details=json.dumps({
+                        "old_username": old_username,
+                        "new_username": clean_username,
+                    }),
+                )
+            )
+
+    if new_password is not None:
+        user.password_hash = hash_password(new_password)
+        session.add(
+            AuditLog(
+                user_id=user.id,
+                action="STAFF_PASSWORD_CHANGED",
+                entity_type="User",
+                entity_id=user.id,
+                details=json.dumps({"username": user.username}),
+            )
         )
-    )
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DuplicateUsernameError("Username is already in use") from exc
     await session.refresh(user)
     return user
 

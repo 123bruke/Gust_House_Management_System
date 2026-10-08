@@ -428,7 +428,16 @@ export function PlaceholderPage({ id, title, description, icon: Icon }: Placehol
           render: (item) => formatDate(item.timestamp, 'datetime'),
         },
         { header: t('ph.colStaffActor'), render: (item) => item.actor_name || t('ph.system') },
-        { header: t('ph.colAction'), accessorKey: 'action' },
+        {
+          header: t('ph.colAction'),
+          render: (item) => item.action === 'STAFF_PASSWORD_CHANGED'
+            ? t('audit.passwordChanged')
+            : item.action === 'STAFF_PASSWORD_RESET_BY_ADMIN'
+              ? t('audit.passwordReset')
+              : item.action === 'STAFF_USERNAME_CHANGED'
+                ? t('audit.usernameChanged')
+              : item.action,
+        },
         {
           header: t('ph.colEntity'),
           render: (item) => `${item.entity_type} #${item.entity_id}`,
