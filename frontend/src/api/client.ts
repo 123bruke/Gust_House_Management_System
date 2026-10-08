@@ -9,12 +9,19 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY)
+  const token = sessionStorage.getItem(TOKEN_KEY)
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
 export function clearSession() {
+  sessionStorage.removeItem(TOKEN_KEY)
+  sessionStorage.removeItem(LEGACY_TOKEN_KEY)
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(LEGACY_TOKEN_KEY)
+}
+
+export function clearLegacySharedSession() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(LEGACY_TOKEN_KEY)
 }

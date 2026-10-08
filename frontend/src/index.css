@@ -1,6 +1,105 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+.login-page {
+    --login-role-accent: #059669;
+    --login-role-water: rgba(16, 185, 129, 0.19);
+    --login-role-water-soft: rgba(52, 211, 153, 0.12);
+}
+
+.login-page[data-login-role="SUPER_ADMIN"] {
+    --login-role-accent: #64748B;
+    --login-role-water: rgba(148, 163, 184, 0.18);
+    --login-role-water-soft: rgba(203, 213, 225, 0.15);
+}
+
+.login-page[data-login-role="RECEPTION"] {
+    --login-role-accent: #2563EB;
+    --login-role-water: rgba(59, 130, 246, 0.19);
+    --login-role-water-soft: rgba(96, 165, 250, 0.13);
+}
+
+.login-water-background {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.login-water-background span {
+    position: absolute;
+    display: block;
+    width: min(78vw, 980px);
+    aspect-ratio: 1;
+    border-radius: 44% 56% 63% 37% / 45% 42% 58% 55%;
+    background: radial-gradient(ellipse at 38% 42%, var(--login-role-water), transparent 68%);
+    filter: blur(14px);
+    will-change: transform, border-radius;
+}
+
+.login-water-background span:first-child {
+    top: -18vh;
+    right: -22vw;
+    animation: loginWaterFlow 24s ease-in-out infinite alternate;
+}
+
+.login-water-background span:last-child {
+    bottom: -22vh;
+    left: -28vw;
+    background: radial-gradient(ellipse at 60% 45%, var(--login-role-water-soft), transparent 68%);
+    animation: loginWaterFlow 30s ease-in-out infinite alternate-reverse;
+}
+
+.login-glass-header {
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    backdrop-filter: blur(14px);
+}
+
+.login-glass-card {
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    backdrop-filter: blur(18px);
+    border-color: color-mix(in srgb, var(--login-role-accent) 22%, var(--line));
+}
+
+.login-role-badge {
+    background: color-mix(in srgb, var(--login-role-accent) 13%, transparent);
+    color: var(--login-role-accent);
+}
+
+.login-role-select:focus {
+    border-color: var(--login-role-accent);
+    --tw-ring-color: var(--login-role-accent);
+}
+
+.login-role-button {
+    background-color: var(--login-role-accent);
+}
+
+.login-role-button:hover {
+    background-color: color-mix(in srgb, var(--login-role-accent) 86%, #111827);
+}
+
+@keyframes loginWaterFlow {
+    0% {
+        transform: translate3d(-3%, -2%, 0) rotate(-8deg) scale(0.96);
+        border-radius: 44% 56% 63% 37% / 45% 42% 58% 55%;
+    }
+    50% {
+        border-radius: 56% 44% 39% 61% / 52% 60% 40% 48%;
+    }
+    100% {
+        transform: translate3d(4%, 3%, 0) rotate(9deg) scale(1.08);
+        border-radius: 38% 62% 56% 44% / 62% 38% 62% 38%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .login-water-background span {
+        animation: none;
+    }
+}
+
 /* ============================================================
    DESIGN TOKENS — Light (default) & Night mode
    ============================================================ */

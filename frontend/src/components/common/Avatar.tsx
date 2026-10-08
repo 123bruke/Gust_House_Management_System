@@ -28,18 +28,34 @@ export function Avatar({
     md: 'w-10 h-10 text-sm font-semibold',
     lg: 'w-12 h-12 text-base font-semibold',
   }[size]
+  const roleStyles =
+    role === 'ADMIN'
+      ? 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800'
+      : role === 'SUPER_ADMIN'
+        ? 'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-600'
+        : role === 'RECEPTION'
+          ? 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800'
+          : 'bg-[var(--primary-tint)] text-[var(--danger)] border-[var(--line)]'
+  const roleIndicator =
+    role === 'ADMIN'
+      ? 'bg-emerald-600'
+      : role === 'SUPER_ADMIN'
+        ? 'bg-slate-600'
+        : role === 'RECEPTION'
+          ? 'bg-blue-600'
+          : 'bg-[var(--success-soft)]'
 
   return (
     <div className="relative inline-flex items-center justify-center shrink-0">
       <div
-        className={`rounded-full flex items-center justify-center bg-[#FFE5EA] text-[#FF385C] border border-[#FFD2D9] select-none ${sizeStyles} ${className}`}
+        className={`rounded-full flex items-center justify-center border select-none ${roleStyles} ${sizeStyles} ${className}`}
         title={`${name}${role ? ` (${role})` : ''}`}
       >
         {getInitials(name)}
       </div>
       {role && (
         <span
-          className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#008A05] border-2 border-white"
+          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--surface)] ${roleIndicator}`}
           title={t('common.activeStaff')}
         />
       )}

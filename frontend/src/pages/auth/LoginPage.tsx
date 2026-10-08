@@ -38,9 +38,13 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--surface)] text-[var(--ink)] flex flex-col justify-between selection:bg-[#FFF0F2] selection:text-[#FF385C]">
+    <div className="login-page relative isolate flex min-h-screen flex-col justify-between overflow-hidden bg-[var(--surface)] text-[var(--ink)] selection:bg-[#FFF0F2] selection:text-[#FF385C]" data-login-role={isAuthenticated && user ? user.role : role}>
+      <div className="login-water-background" aria-hidden="true">
+        <span />
+        <span />
+      </div>
       {/* Top Header */}
-      <header className="w-full min-h-18 sm:min-h-20 px-4 sm:px-12 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-faint)] bg-[var(--surface)]">
+      <header className="login-glass-header relative z-10 flex min-h-18 w-full flex-wrap items-center justify-between gap-3 border-b border-[var(--line-faint)] px-4 py-3 sm:min-h-20 sm:px-12">
         <div className="flex items-center gap-3">
           <span className="flex h-14 w-20 shrink-0 items-center justify-center rounded-md bg-white dark:bg-black sm:h-16 sm:w-24">
             <img src="/roomtracker-logo.png" alt="RoomTracker" className="h-full w-full object-contain" />
@@ -111,9 +115,9 @@ export function LoginPage() {
       </header>
 
       {/* Main Centered Login Section */}
-      <main className="flex-1 flex items-center justify-center p-6 py-12 sm:py-16">
+      <main className="relative z-10 flex flex-1 items-center justify-center p-6 py-12 sm:py-16">
         <div className="w-full max-w-md animate-fade-in">
-          <div className="bg-[var(--surface)] rounded-3xl border border-[var(--line)] p-7 sm:p-10 shadow-[0_4px_24px_rgba(0,0,0,0.12)]">
+          <div className="login-glass-card rounded-3xl border border-[var(--line)] p-7 shadow-[0_4px_24px_rgba(0,0,0,0.12)] sm:p-10">
             {isAuthenticated && user ? (
               /* Already Signed In View */
               <div className="text-center space-y-5">
@@ -162,7 +166,7 @@ export function LoginPage() {
               <>
                 {/* Greeting & Header */}
                 <div className="text-center mb-8">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFF0F2] text-[#FF385C] text-xs font-semibold mb-3">
+                  <div className="login-role-badge mb-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold">
                     <ShieldCheck size={13} />
                     <span>{t('login.staffPortal')}</span>
                   </div>
@@ -185,7 +189,7 @@ export function LoginPage() {
                       required
                       value={role}
                       onChange={(event) => setRole(event.target.value as Role)}
-                      className="h-12 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 text-sm text-[var(--ink)] focus:border-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-[var(--ink)]"
+                      className="login-role-select h-12 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 text-sm text-[var(--ink)] focus:outline-none focus:ring-1"
                     >
                       <option value="ADMIN">{t('role.administrator')}</option>
                       <option value="SUPER_ADMIN">{t('role.superAdmin')}</option>
@@ -264,7 +268,7 @@ export function LoginPage() {
                     variant="primary"
                     size="lg"
                     loading={submitting}
-                    className="w-full h-12 text-sm font-semibold rounded-xl mt-2"
+                    className="login-role-button mt-2 w-full h-12 text-sm font-semibold rounded-xl"
                   >
                     {submitting ? t('login.signingIn') : t('login.signInToGH')}
                   </Button>
@@ -284,7 +288,7 @@ export function LoginPage() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full py-6 px-6 text-center text-xs text-[var(--ink-muted)] border-t border-[var(--line-faint)]">
+      <footer className="relative z-10 w-full border-t border-[var(--line-faint)] px-6 py-6 text-center text-xs text-[var(--ink-muted)]">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>© {new Date().getFullYear()} Family Guest House. {t('login.allRightsReserved')}</span>
           <div className="flex items-center gap-4 text-xs text-[var(--ink-muted)]">

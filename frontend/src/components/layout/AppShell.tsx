@@ -76,6 +76,24 @@ export function AppShell() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
+  const profileTone =
+    user?.role === 'ADMIN'
+      ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/50'
+      : user?.role === 'SUPER_ADMIN'
+        ? 'border-slate-200 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-800/60'
+        : 'border-blue-200 bg-blue-50/70 dark:border-blue-800 dark:bg-blue-950/50'
+  const profileTextTone =
+    user?.role === 'ADMIN'
+      ? 'text-emerald-800 dark:text-emerald-200'
+      : user?.role === 'SUPER_ADMIN'
+        ? 'text-slate-800 dark:text-slate-100'
+        : 'text-blue-800 dark:text-blue-200'
+  const translatedRole =
+    user?.role === 'SUPER_ADMIN'
+      ? t('role.superAdmin')
+      : user?.role === 'ADMIN'
+        ? t('role.administrator')
+        : t('role.receptionDesk')
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -268,7 +286,7 @@ export function AppShell() {
               <button
                 type="button"
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center gap-2.5 py-1.5 px-3 rounded-xl hover:bg-[#F7F7F7] border border-[#EEEEEE] transition text-left cursor-pointer"
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-1.5 text-left transition hover:bg-[var(--surface-2)] ${profileTone}`}
                 aria-label={t('nav.userMenu')}
               >
                 <Avatar
@@ -280,8 +298,8 @@ export function AppShell() {
                   <span className="block text-xs font-semibold text-[#222222] leading-tight truncate max-w-[140px]">
                     {user?.full_name}
                   </span>
-                  <span className="block text-[11px] text-[#717171] leading-tight capitalize">
-                    {user?.role === 'SUPER_ADMIN' ? t('role.superAdmin') : user?.role === 'ADMIN' ? t('role.administrator') : t('role.receptionDesk')}
+                  <span className={`block text-[11px] leading-tight capitalize ${profileTextTone}`}>
+                    {translatedRole}
                   </span>
                 </div>
                 <ChevronDown
@@ -293,13 +311,13 @@ export function AppShell() {
               </button>
 
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-[#DDDDDD] shadow-[0_10px_35px_rgba(0,0,0,0.1)] py-2 z-50 animate-fade-in text-xs">
-                  <div className="px-3.5 py-2 border-b border-[#F0F0F0]">
+                <div className="absolute right-0 z-50 mt-2 w-56 animate-fade-in rounded-2xl border border-[var(--line)] bg-[var(--surface)] py-2 text-xs shadow-[0_10px_35px_rgba(0,0,0,0.1)]">
+                  <div className={`mx-2 rounded-xl border px-3 py-2 ${profileTone}`}>
                     <span className="block font-bold text-xs text-[#222222] truncate">
                       {user?.full_name}
                     </span>
-                    <span className="block text-[11px] text-[#717171]">
-                      {user?.username} · {user?.role === 'ADMIN' ? t('role.administrator') : t('role.receptionDesk')}
+                    <span className={`block text-[11px] ${profileTextTone}`}>
+                      {user?.username} · {translatedRole}
                     </span>
                   </div>
                   <button

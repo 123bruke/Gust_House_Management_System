@@ -1,20 +1,28 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { getCurrentUser, login as loginRequest, sendHeartbeat } from '../api/auth'
-import { clearSession, getApiError, TOKEN_KEY } from '../api/client'
+import { clearLegacySharedSession, clearSession, getApiError, TOKEN_KEY } from '../api/client'
 import { AuthContext } from './auth-context'
 import type { Role, User } from '../types/api'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(() => Boolean(localStorage.getItem(TOKEN_KEY)))
+  const [isLoading, setIsLoading] = useState(() => Boolean(sessionStorage.getItem(TOKEN_KEY)))
 
   useEffect(() => {
-    if (!localStorage.getItem(TOKEN_KEY)) return
-    getCurrentUser().then(setUser).catch(() => { clearSession(); setUser(null) }).finally(() => setIsLoading(false))
+    clearLegacySharedSession()
+    if (!sessionStorage.getItem(TOKEN_KEY)) return
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => {
+        clearSession()
+        setUser(null)
+      })
+      .finally(() => setIsLoading(false))
   }, [])
 
   useEffect(() => {
-    if (!user) return
+    const userId = user?.id
+    if (!userId) return
     const updatePresence = () => {
       sendHeartbeat().catch((error: unknown) => {
         console.error('Failed to update staff presence:', error)
@@ -28,8 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(username: string, password: string, role: Role) {
     try {
       const response = await loginRequest(username, password, role)
-      localStorage.setItem(TOKEN_KEY, response.access_token)
-      setUser(await getCurrentUser())
+      sessionStorage.setItem(TOKEN_KEY, response.access_token)
+      setUser(response.user)
     } catch (error) {
       throw new Error(getApiError(error, 'Invalid username or password.'), { cause: error })
     }
