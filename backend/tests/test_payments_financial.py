@@ -98,10 +98,16 @@ async def test_usd_payment_is_tracked_separately_from_property_balance(client: A
 	response = await client.post(
 		f"/api/v1/stays/{stay_id}/payments",
 		headers=auth(token),
-		json={"amount": "75.25", "currency": "USD", "payment_method": "CASH"},
+		json={
+			"amount": "75.25",
+			"currency": "USD",
+			"exchange_rate": "135.000000",
+			"payment_method": "CASH",
+		},
 	)
 	assert response.status_code == 201
 	assert response.json()["currency"] == "USD"
+	assert response.json()["exchange_rate"] == "135.000000"
 	summary = (
 		await client.get(f"/api/v1/stays/{stay_id}/financial-summary", headers=auth(token))
 	).json()
