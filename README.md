@@ -157,13 +157,11 @@ repository's `render.yaml` Blueprint:
 
 1. Push the repository to GitHub and create a Blueprint in the Render
    dashboard using this repository.
-2. The API service uses the repository root as its Root Directory, with
-   commands that explicitly run from `backend`. If you created a Render Web
-   Service manually instead of using the Blueprint, set its Root Directory to
-   the repository root, Build Command to
-   `pip install -r backend/requirements.txt && cd backend && alembic upgrade head`,
-   and Start Command to
-   `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+2. The API service uses `backend` as its Root Directory. If you created a
+   Render Web Service manually instead of using the Blueprint, enter `backend`
+   as its Root Directory, set Build Command to
+   `pip install -r requirements.txt && alembic upgrade head`, and set Start
+   Command to `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 3. Render will request `CORS_ORIGINS`. Enter the exact Vercel site origin
    (for example, `https://your-project.vercel.app`) without a trailing slash.
 4. Wait for the API deployment to finish, then confirm
