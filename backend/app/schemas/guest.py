@@ -25,6 +25,7 @@ class GuestCreate(BaseModel):
 	nationality: str | None = Field(default=None, max_length=100)
 	id_photo_url: str | None = None
 	notes: str | None = None
+	property_id: int | None = Field(default=None, gt=0)
 
 	_required_validator = field_validator("full_name", "id_number", "phone", mode="before")(
 		trim_required

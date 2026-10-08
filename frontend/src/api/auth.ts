@@ -18,6 +18,10 @@ export async function getCurrentUser() {
   return data
 }
 
+export async function sendHeartbeat(): Promise<void> {
+  await api.post('/auth/heartbeat')
+}
+
 export async function publicChangePassword(payload: PublicChangePasswordPayload) {
   const { data } = await api.post<PasswordChangeResponse>('/auth/public-change-password', payload)
   return data

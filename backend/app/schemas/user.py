@@ -51,3 +51,15 @@ class UserRead(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class StaffActivityRead(BaseModel):
+    id: int
+    full_name: str
+    username: str
+    role: UserRole
+    property_name: str | None
+    last_seen_at: datetime | None
+    is_online: bool
+    active_days: int
+    password_changed_at: datetime

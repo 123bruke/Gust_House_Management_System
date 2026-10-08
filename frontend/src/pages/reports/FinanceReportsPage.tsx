@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   BarChart3,
@@ -8,13 +8,17 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  Printer,
+  Share2,
 } from '../../components/common/MaterialIcon'
 import { PageHeader } from '../../components/common/PageHeader'
+import { Button } from '../../components/common/Button'
+import { Modal } from '../../components/common/Modal'
 import { useAuth } from '../../context/AuthContext'
 import { getProperties } from '../../api/superAdmin'
 import { getApiError } from '../../api/client'
 import { getFinanceReport } from '../../api/reports'
-import type { FinanceBucket, FinancePeriod, FinanceReport, Property } from '../../types/api'
+import type { FinanceBucket, FinancePeriod, FinanceReport, FinanceTransaction, Property } from '../../types/api'
 import { useI18n } from '../../i18n'
 
 const TIME_ZONE = 'Africa/Addis_Ababa'
@@ -97,6 +101,10 @@ export function FinanceReportsPage() {
   const [chartStyle, setChartStyle] = useState<'bars' | 'line'>('bars')
   const [selectedBucket, setSelectedBucket] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<string | null>(null)
+  const [selectedKind, setSelectedKind] = useState<'INCOME' | 'EXPENSE' | null>(null)
+  const [selectedTransaction, setSelectedTransaction] = useState<FinanceTransaction | null>(null)
+  const [shareStatus, setShareStatus] = useState('')
+  const timelineRef = useRef<HTMLElement>(null)
 
   const fetchReport = useCallback(async () => {
     setLoading(true)
@@ -141,14 +149,20 @@ export function FinanceReportsPage() {
     return () => window.clearInterval(intervalId)
   }, [fetchReport])
 
-  const formatCurrencyTotals = useCallback(
-    (amounts: Record<string, string>) => {
-      const entries = Object.entries(amounts).filter(([, amount]) => Number(amount) !== 0)
-      return entries.length
-        ? entries.map(([code, amount]) => money(Number(amount), code)).join(' · ')
-        : money(0, currency)
-    },
-    [currency]
+  const formatCurrencyTotals = (amounts: Record<string, string>) => {
+    const entries = Object.entries(amounts).filter(([, amount]) => Number(amount) !== 0)
+    return entries.length
+      ? entries.map(([code, amount]) => money(Number(amount), code)).join(' · ')
+      : '—'
+  }
+
+  const activeBuckets = useMemo(
+    () =>
+      (report?.buckets ?? []).filter((bucket) =>
+        [...Object.values(bucket.income_by_currency), ...Object.values(bucket.expenses_by_currency)]
+          .some((amount) => Number(amount) !== 0)
+      ),
+    [report]
   )
 
   const visibleTransactions = useMemo(() => {
@@ -157,12 +171,13 @@ export function FinanceReportsPage() {
       const matchesBucket =
         selectedBucket === null || bucketKeyForTimestamp(transaction.occurred_at, report.period) === selectedBucket
       const matchesSource = selectedSource === null || transaction.source === selectedSource
-      return matchesBucket && matchesSource
+      const matchesKind = selectedKind === null || transaction.kind === selectedKind
+      return matchesBucket && matchesSource && matchesKind
     })
-  }, [report, selectedBucket, selectedSource])
+  }, [report, selectedBucket, selectedSource, selectedKind])
 
   const analysis = useMemo(() => {
-    const buckets = report?.buckets ?? []
+    const buckets = activeBuckets
     const totalIncome = Number(report?.income_by_currency[currency] ?? 0)
     if (buckets.length === 0 || totalIncome === 0) return null
     const sorted = [...buckets].sort(
@@ -174,12 +189,63 @@ export function FinanceReportsPage() {
       low: sorted[0],
       average: totalIncome / buckets.length,
     }
-  }, [report, currency])
+  }, [activeBuckets, report, currency])
 
   function choosePeriod(nextPeriod: FinancePeriod) {
     setPeriod(nextPeriod)
     setSelectedBucket(null)
     setSelectedSource(null)
+    setSelectedKind(null)
+  }
+
+  function openEntries(kind: 'INCOME' | 'EXPENSE' | null) {
+    setSelectedKind(kind)
+    setSelectedBucket(null)
+    setSelectedSource(null)
+    window.setTimeout(() => timelineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+  }
+
+  function transactionSummary(transaction: FinanceTransaction): string {
+    const kind = transaction.kind === 'INCOME' ? t('fin.incomeEntry') : t('fin.expenseEntry')
+    const source = paymentMethodName(transaction.source, t)
+    const description =
+      transaction.kind === 'INCOME'
+        ? [transaction.guest_name, transaction.room_number ? `${t('common.room')} ${transaction.room_number}` : null]
+            .filter(Boolean)
+            .join(' · ')
+        : [transaction.category, transaction.description, transaction.recorded_by]
+            .filter(Boolean)
+            .join(' · ')
+    return [
+      kind,
+      money(Number(transaction.amount), transaction.currency),
+      formatDate(transaction.occurred_at, 'datetime'),
+      `${t('fin.transactionSource')}: ${source}`,
+      description,
+      transaction.reference
+        ? `${transaction.kind === 'INCOME' ? t('common.reference') : t('common.reason')}: ${transaction.reference}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  async function shareTransaction(transaction: FinanceTransaction) {
+    setShareStatus('')
+    try {
+      const text = transactionSummary(transaction)
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ title: t('fin.transactionDetails'), text })
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        throw new Error('Sharing is not supported by this browser')
+      }
+      setShareStatus(t('fin.shareReady'))
+    } catch (shareError: unknown) {
+      if (shareError instanceof DOMException && shareError.name === 'AbortError') return
+      setShareStatus(t('fin.shareFailed'))
+    }
   }
 
   function chooseProperty(value: string) {
@@ -190,14 +256,28 @@ export function FinanceReportsPage() {
 
   const maximumBucketAmount = Math.max(
     1,
-    ...(report?.buckets.flatMap((bucket) => [
+    ...activeBuckets.flatMap((bucket) => [
       Number(bucket.income_by_currency[currency] ?? 0),
       Number(bucket.expenses_by_currency[currency] ?? 0),
-    ]) ?? [])
+    ])
   )
 
   return (
     <div className="space-y-5">
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .finance-detail-printable, .finance-detail-printable * { visibility: visible !important; }
+          .finance-detail-printable {
+            position: fixed;
+            inset: 0;
+            padding: 24px;
+            color: #111827;
+            background: #fff;
+            font-family: Arial, sans-serif;
+          }
+        }
+      `}</style>
       <PageHeader
         title={t('fin.pageTitle')}
         subtitle={t('fin.pageSubtitle')}
@@ -310,21 +390,31 @@ export function FinanceReportsPage() {
         <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              { label: t('reports.tab.income'), value: '', amounts: report.income_by_currency, icon: TrendingUp, tone: 'text-emerald-700', count: false },
-              { label: t('reports.tab.expenses'), value: '', amounts: report.expenses_by_currency, icon: TrendingDown, tone: 'text-rose-700', count: false },
-              { label: t('fin.net'), value: '', amounts: report.net_by_currency, icon: Wallet, tone: 'text-neutral-900', count: false },
+              { label: t('reports.tab.income'), value: '', amounts: report.income_by_currency, icon: TrendingUp, tone: 'text-emerald-700', kind: 'INCOME' as const, count: false },
+              { label: t('reports.tab.expenses'), value: '', amounts: report.expenses_by_currency, icon: TrendingDown, tone: 'text-rose-700', kind: 'EXPENSE' as const, count: false },
+              { label: t('fin.net'), value: '', amounts: report.net_by_currency, icon: Wallet, tone: 'text-neutral-900', kind: null, count: false },
               {
                 label: t('fin.transactions'),
                 value: report.transaction_count.toString(),
                 amounts: undefined,
                 icon: Clock,
                 tone: 'text-neutral-900',
+                kind: null,
                 count: true,
               },
-            ].map((item) => {
+            ].filter((item) =>
+              item.count
+                ? Number(item.value) > 0
+                : Object.values(item.amounts ?? {}).some((amount) => Number(amount) !== 0)
+            ).map((item) => {
               const Icon = item.icon
               return (
-                <article key={item.label} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => openEntries(item.kind)}
+                  className="rounded-2xl border border-neutral-200 bg-white p-4 text-left transition hover:border-emerald-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                >
                   <div className="flex items-center justify-between text-sm text-neutral-500">
                     <span>{item.label}</span>
                     <Icon size={18} className={item.tone} />
@@ -335,10 +425,16 @@ export function FinanceReportsPage() {
                   {item.label === t('fin.transactions') && report.transactions_truncated && (
                     <p className="mt-1 text-xs text-neutral-500">{t('fin.latest500')}</p>
                   )}
-                </article>
+                </button>
               )
             })}
           </section>
+
+          {report.transaction_count === 0 && (
+            <p className="rounded-xl border border-neutral-200 bg-white px-4 py-5 text-center text-sm text-neutral-500">
+              {t('fin.noActivityForPeriod')}
+            </p>
+          )}
 
           <section className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -386,7 +482,7 @@ export function FinanceReportsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
-                    {report.buckets.map((bucket) => (
+                    {activeBuckets.map((bucket) => (
                       <BucketTableRow
                         key={bucket.key}
                         bucket={bucket}
@@ -406,7 +502,7 @@ export function FinanceReportsPage() {
                 </div>
                 {chartStyle === 'bars' ? (
                   <div className="flex h-64 items-end gap-1 overflow-x-auto border-b border-l border-neutral-200 px-2 pt-3">
-                    {report.buckets.map((bucket) => (
+                    {activeBuckets.map((bucket) => (
                       <button
                         key={bucket.key}
                         type="button"
@@ -424,11 +520,11 @@ export function FinanceReportsPage() {
                         <span className="flex h-[86%] items-end justify-center gap-0.5">
                           <i
                             className="w-2/5 rounded-t-sm bg-emerald-600 group-hover:bg-emerald-700"
-                            style={{ height: `${Math.max(1, (Number(bucket.income_by_currency[currency] ?? 0) / maximumBucketAmount) * 100)}%` }}
+                            style={{ height: `${Number(bucket.income_by_currency[currency] ?? 0) > 0 ? Math.max(1, (Number(bucket.income_by_currency[currency] ?? 0) / maximumBucketAmount) * 100) : 0}%` }}
                           />
                           <i
                             className="w-2/5 rounded-t-sm bg-rose-400"
-                            style={{ height: `${Math.max(1, (Number(bucket.expenses_by_currency[currency] ?? 0) / maximumBucketAmount) * 100)}%` }}
+                            style={{ height: `${Number(bucket.expenses_by_currency[currency] ?? 0) > 0 ? Math.max(1, (Number(bucket.expenses_by_currency[currency] ?? 0) / maximumBucketAmount) * 100) : 0}%` }}
                           />
                         </span>
                         <span className="mt-2 w-full truncate text-center text-[10px] text-neutral-500">{bucket.label}</span>
@@ -445,18 +541,18 @@ export function FinanceReportsPage() {
                         fill="none"
                         stroke="#059669"
                         strokeWidth="4"
-                        points={trendPoints(report.buckets, 'income', maximumBucketAmount, currency)}
+                        points={trendPoints(activeBuckets, 'income', maximumBucketAmount, currency)}
                       />
                       <polyline
                         fill="none"
                         stroke="#fb7185"
                         strokeWidth="3"
-                        points={trendPoints(report.buckets, 'expenses', maximumBucketAmount, currency)}
+                        points={trendPoints(activeBuckets, 'expenses', maximumBucketAmount, currency)}
                       />
-                      {report.buckets.map((bucket, index) => (
+                      {activeBuckets.map((bucket, index) => (
                         <circle
                           key={bucket.key}
-                          cx={pointX(index, report.buckets.length)}
+                          cx={pointX(index, activeBuckets.length)}
                           cy={pointY(Number(bucket.income_by_currency[currency] ?? 0), maximumBucketAmount)}
                           r="5"
                           fill="#059669"
@@ -469,7 +565,7 @@ export function FinanceReportsPage() {
                       ))}
                     </svg>
                     <div className="mt-2 flex overflow-x-auto">
-                      {report.buckets.map((bucket) => (
+                      {activeBuckets.map((bucket) => (
                         <button
                           key={bucket.key}
                           type="button"
@@ -493,12 +589,13 @@ export function FinanceReportsPage() {
                   <h2 className="text-base font-bold text-neutral-900">{t('fin.paymentSources')}</h2>
                   <p className="text-xs text-neutral-500">{t('fin.paymentSourcesSub')}</p>
                 </div>
-                {(selectedBucket || selectedSource) && (
+                {(selectedBucket || selectedSource || selectedKind) && (
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedBucket(null)
                       setSelectedSource(null)
+                      setSelectedKind(null)
                     }}
                     className="text-xs font-semibold text-emerald-800 underline"
                   >
@@ -517,7 +614,10 @@ export function FinanceReportsPage() {
                     <button
                       key={source.name}
                       type="button"
-                      onClick={() => setSelectedSource(selectedSource === source.name ? null : source.name)}
+                      onClick={() => {
+                        setSelectedSource(selectedSource === source.name ? null : source.name)
+                        setSelectedKind('INCOME')
+                      }}
                       className={`w-full rounded-xl p-2 text-left ${selectedSource === source.name ? 'bg-emerald-50' : 'hover:bg-neutral-50'}`}
                     >
                       <span className="flex items-center justify-between gap-3 text-sm">
@@ -569,7 +669,7 @@ export function FinanceReportsPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+          <section ref={timelineRef} className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 p-4">
               <div>
                 <h2 className="text-base font-bold text-neutral-900">{t('fin.paymentTimeline')}</h2>
@@ -590,21 +690,53 @@ export function FinanceReportsPage() {
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
                   {visibleTransactions.map((transaction) => (
-                    <tr key={transaction.id} className="hover:bg-neutral-50">
+                    <tr key={`${transaction.kind}-${transaction.id}`} className="hover:bg-neutral-50">
                       <td className="whitespace-nowrap px-4 py-3 text-neutral-600">{formatDate(transaction.occurred_at, 'datetime')}</td>
                       <td className="px-4 py-3">
-                        <span className="block font-semibold text-neutral-900">{transaction.guest_name}</span>
-                        <span className="text-xs text-neutral-500">{t('common.room')} {transaction.room_number}</span>
+                        {transaction.kind === 'INCOME' ? (
+                          <>
+                            <span className="block font-semibold text-neutral-900">{transaction.guest_name || '—'}</span>
+                            <span className="text-xs text-neutral-500">
+                              {transaction.room_number ? `${t('common.room')} ${transaction.room_number}` : t('fin.stayPayment')}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="block font-semibold text-neutral-900">{transaction.category || t('fin.expenseEntry')}</span>
+                            <span className="text-xs text-neutral-500">{transaction.description || transaction.recorded_by || '—'}</span>
+                          </>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-neutral-700">{paymentMethodName(transaction.source, t)} · {t('fin.stayPayment')}</td>
+                      <td className="px-4 py-3 text-neutral-700">
+                        {transaction.kind === 'INCOME'
+                          ? `${paymentMethodName(transaction.source, t)} · ${t('fin.incomeEntry')}`
+                          : paymentMethodName(transaction.source, t) || t('fin.expenseEntry')}
+                      </td>
                       <td className="px-4 py-3 text-neutral-500">{transaction.reference || '—'}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-emerald-800">{money(Number(transaction.amount), transaction.currency)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTransaction(transaction)
+                            setShareStatus('')
+                          }}
+                          className={`font-bold underline-offset-2 hover:underline focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${
+                            transaction.kind === 'INCOME' ? 'text-emerald-800' : 'text-rose-700'
+                          }`}
+                          aria-label={t('fin.openTransactionDetails', {
+                            kind: transaction.kind === 'INCOME' ? t('fin.incomeEntry') : t('fin.expenseEntry'),
+                            amount: money(Number(transaction.amount), transaction.currency),
+                          })}
+                        >
+                          {money(Number(transaction.amount), transaction.currency)}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {visibleTransactions.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-4 py-10 text-center text-sm text-neutral-500">
-                        {t('fin.noPaymentsMatch')}
+                        {t('fin.noEntriesMatch')}
                       </td>
                     </tr>
                   )}
@@ -619,6 +751,54 @@ export function FinanceReportsPage() {
           </section>
         </>
       )}
+      <Modal
+        isOpen={selectedTransaction !== null}
+        onClose={() => setSelectedTransaction(null)}
+        title={t('fin.transactionDetails')}
+        description={t('fin.transactionDetailsSub')}
+        size="lg"
+        footer={
+          <>
+            <Button variant="outline" size="sm" leftIcon={<Printer size={16} />} onClick={() => window.print()}>
+              {t('common.print')}
+            </Button>
+            <Button variant="secondary" size="sm" leftIcon={<Share2 size={16} />} onClick={() => selectedTransaction && void shareTransaction(selectedTransaction)}>
+              {t('common.share')}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedTransaction(null)}>
+              {t('common.close')}
+            </Button>
+          </>
+        }
+      >
+        {selectedTransaction && (
+          <div className="finance-detail-printable space-y-4">
+            <h2 className="text-lg font-bold">{t('fin.transactionDetails')}</h2>
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <Detail label={t('fin.transactionType')} value={selectedTransaction.kind === 'INCOME' ? t('fin.incomeEntry') : t('fin.expenseEntry')} />
+              <Detail label={t('common.amount')} value={money(Number(selectedTransaction.amount), selectedTransaction.currency)} />
+              <Detail label={t('common.date')} value={formatDate(selectedTransaction.occurred_at, 'datetime')} />
+              <Detail label={t('fin.transactionSource')} value={paymentMethodName(selectedTransaction.source, t) || '—'} />
+              <Detail label={t('common.guest')} value={selectedTransaction.guest_name || '—'} />
+              <Detail label={t('common.room')} value={selectedTransaction.room_number || '—'} />
+              <Detail label={t('common.category')} value={selectedTransaction.category || '—'} />
+              <Detail label={t('common.description')} value={selectedTransaction.description || '—'} />
+              <Detail label={selectedTransaction.kind === 'INCOME' ? t('common.reference') : t('common.reason')} value={selectedTransaction.reference || '—'} />
+              <Detail label={t('fin.recordedBy')} value={selectedTransaction.recorded_by || '—'} />
+            </dl>
+            {shareStatus && <p role="status" className="text-sm text-neutral-600">{shareStatus}</p>}
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-neutral-200 p-3">
+      <dt className="text-xs font-medium text-neutral-500">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-semibold text-neutral-900">{value}</dd>
     </div>
   )
 }

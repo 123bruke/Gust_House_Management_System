@@ -15,6 +15,18 @@ export interface User {
   updated_at: string
 }
 
+export interface StaffActivity {
+  id: number
+  full_name: string
+  username: string
+  role: Extract<Role, 'ADMIN' | 'RECEPTION'>
+  property_name: string | null
+  last_seen_at: string | null
+  is_online: boolean
+  active_days: number
+  password_changed_at: string
+}
+
 export interface AuditLog {
   id: number
   user_id: number | null
@@ -248,14 +260,18 @@ export interface FinanceSource {
 }
 
 export interface FinanceTransaction {
+  kind: 'INCOME' | 'EXPENSE'
   id: number
   occurred_at: string
   amount: string
   currency: string
   source: string
-  guest_name: string
-  room_number: string
+  guest_name: string | null
+  room_number: string | null
   reference: string | null
+  category: string | null
+  description: string | null
+  recorded_by: string | null
 }
 
 export interface FinanceReport {

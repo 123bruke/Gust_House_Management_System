@@ -152,7 +152,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       const entry = translations[key]
       let text: string
       if (!entry) {
-        text = key
+        const label = key.split('.').pop() || key
+        text = label
+          .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+          .replace(/[_-]+/g, ' ')
+          .replace(/^\w/, (character) => character.toUpperCase())
       } else if (lang === 'am') {
         text = entry.am || entry.en || key
       } else {

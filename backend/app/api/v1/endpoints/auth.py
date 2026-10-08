@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
+from app.models.user_login_activity import UserLoginActivity
 from app.schemas.auth import (
     AdminOverrideResetRequest,
     ChangePasswordRequest,
@@ -43,7 +46,20 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_db)) 
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    user.last_seen_at = datetime.now(timezone.utc)
+    session.add(UserLoginActivity(user_id=user.id))
+    await session.commit()
+    await session.refresh(user)
     return TokenResponse(access_token=issue_access_token(user), user=UserRead.model_validate(user))
+
+
+@router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
+async def heartbeat(
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    current_user.last_seen_at = datetime.now(timezone.utc)
+    await session.commit()
 
 
 @router.get("/me", response_model=UserRead)

@@ -16,13 +16,20 @@ import { CheckInModal } from '../../components/modals/CheckInModal'
 import { IdPhotoCapture } from '../../components/common/IdPhotoCapture'
 import { getGuests, createGuest } from '../../api/guests'
 import { getRooms } from '../../api/rooms'
+import { getProperties } from '../../api/superAdmin'
+import { getApiError } from '../../api/client'
+import { useAuth } from '../../hooks/useAuth'
 import { useI18n } from '../../i18n'
-import type { Guest, Room } from '../../types/api'
+import type { Guest, Property, Room } from '../../types/api'
 
 export function GuestsPage() {
+  const { user } = useAuth()
   const { t, formatDate } = useI18n()
   const [guests, setGuests] = useState<Guest[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
+  const [properties, setProperties] = useState<Property[]>([])
+  const [selectedPropertyId, setSelectedPropertyId] = useState('')
+  const [propertiesLoading, setPropertiesLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
@@ -41,6 +48,7 @@ export function GuestsPage() {
   const [notes, setNotes] = useState('')
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState('')
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN'
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -58,6 +66,15 @@ export function GuestsPage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    setPropertiesLoading(true)
+    getProperties()
+      .then((items) => setProperties(items.filter((property) => property.is_active)))
+      .catch((error: unknown) => setFormError(getApiError(error, t('guests.propertiesLoadFailed'))))
+      .finally(() => setPropertiesLoading(false))
+  }, [isSuperAdmin, t])
 
   const availableRooms = rooms.filter((r) => r.status === 'AVAILABLE')
 
@@ -79,32 +96,36 @@ export function GuestsPage() {
       setFormError(t('guests.validationRequired'))
       return
     }
+    if (isSuperAdmin && !selectedPropertyId) {
+      setFormError(t('guests.propertyRequired'))
+      return
+    }
 
     setFormLoading(true)
     setFormError('')
 
     try {
-      await createGuest({
+      const createdGuest = await createGuest({
         full_name: fullName.trim(),
         phone: phone.trim(),
         id_number: idNumber.trim(),
         id_photo_url: idPhoto || undefined,
         nationality: nationality.trim() || undefined,
         notes: notes.trim() || undefined,
+        ...(isSuperAdmin ? { property_id: Number(selectedPropertyId) } : {}),
       })
 
+      setGuests((current) => [...current, createdGuest])
       setCreateGuestOpen(false)
       setFullName('')
       setPhone('')
       setIdNumber('')
       setIdPhoto(null)
+      setNationality('Ethiopian')
       setNotes('')
-      fetchData()
+      setSelectedPropertyId('')
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        t('guests.registerFailed')
-      setFormError(msg)
+      setFormError(getApiError(err, t('guests.registerFailed')))
     } finally {
       setFormLoading(false)
     }
@@ -261,6 +282,33 @@ export function GuestsPage() {
         size="md"
       >
         <form onSubmit={handleCreateGuest} className="space-y-4">
+          {isSuperAdmin && (
+            <label className="block text-sm font-medium text-neutral-700">
+              {t('common.property')}
+              <select
+                required
+                disabled={propertiesLoading}
+                value={selectedPropertyId}
+                onChange={(event) => setSelectedPropertyId(event.target.value)}
+                className="mt-1 block w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C] disabled:bg-neutral-100"
+              >
+                <option value="">
+                  {propertiesLoading ? t('common.loading') : t('guests.selectProperty')}
+                </option>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+              </select>
+              {!propertiesLoading && properties.length === 0 && (
+                <span className="mt-1 block text-xs text-rose-700">
+                  {t('guests.noActiveProperties')}
+                </span>
+              )}
+            </label>
+          )}
+
           <Input
             label={t('guests.fullNameRequired')}
             placeholder={t('guests.fullNamePlaceholder')}
@@ -332,7 +380,13 @@ export function GuestsPage() {
             >
               {t('common.cancel')}
             </Button>
-            <Button variant="primary" type="submit" isLoading={formLoading} className="gap-2">
+            <Button
+              variant="primary"
+              type="submit"
+              isLoading={formLoading}
+              disabled={propertiesLoading || (isSuperAdmin && !selectedPropertyId)}
+              className="gap-2"
+            >
               <UserCheck size={16} />
               {formLoading ? t('guests.saving') : t('guests.registerProfile')}
             </Button>

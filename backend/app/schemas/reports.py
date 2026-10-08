@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -121,14 +122,18 @@ class FinanceSource(BaseModel):
 
 
 class FinanceTransaction(BaseModel):
+	kind: Literal["INCOME", "EXPENSE"]
 	id: int
 	occurred_at: datetime
 	amount: Decimal
 	currency: str
 	source: str
-	guest_name: str
-	room_number: str
+	guest_name: str | None = None
+	room_number: str | None = None
 	reference: str | None = None
+	category: str | None = None
+	description: str | None = None
+	recorded_by: str | None = None
 
 
 class FinanceReport(BaseModel):

@@ -101,4 +101,9 @@ async def reset_user_password(
     session: AsyncSession = Depends(get_db),
 ) -> User:
     user = await get_user_or_404(user_id, current_user, session)
-    return await set_password(session, user, new_password=payload.new_password)
+    return await set_password(
+        session,
+        user,
+        new_password=payload.new_password,
+        actor_id=current_user.id,
+    )

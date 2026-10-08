@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,6 +132,7 @@ async def change_password(
 
     if new_password is not None:
         user.password_hash = hash_password(new_password)
+        user.password_changed_at = datetime.now(timezone.utc)
         session.add(
             AuditLog(
                 user_id=user.id,
@@ -149,8 +151,25 @@ async def change_password(
     return user
 
 
-async def set_password(session: AsyncSession, user: User, *, new_password: str) -> User:
+async def set_password(
+    session: AsyncSession,
+    user: User,
+    *,
+    new_password: str,
+    actor_id: int,
+) -> User:
     user.password_hash = hash_password(new_password)
+    user.password_changed_at = datetime.now(timezone.utc)
+    session.add(
+        AuditLog(
+            property_id=user.property_id,
+            user_id=actor_id,
+            action="STAFF_PASSWORD_RESET",
+            entity_type="User",
+            entity_id=user.id,
+            details=json.dumps({"target_username": user.username}),
+        )
+    )
     await session.commit()
     await session.refresh(user)
     return user
@@ -181,6 +200,7 @@ async def public_change_password(
         raise InvalidCurrentPasswordError("Invalid username or password")
 
     user.password_hash = hash_password(new_password)
+    user.password_changed_at = datetime.now(timezone.utc)
     session.add(
         AuditLog(
             user_id=user.id,
@@ -218,6 +238,7 @@ async def admin_override_reset_password(
         raise UserNotFoundError(f"User '{target_username}' not found")
 
     target_user.password_hash = hash_password(new_password)
+    target_user.password_changed_at = datetime.now(timezone.utc)
     session.add(
         AuditLog(
             user_id=admin_user.id,

@@ -8,6 +8,7 @@ from app.models.reservation import Reservation, ReservationStatus
 from app.models.room import Room, RoomStatus
 from app.models.stay import Stay, StayStatus
 from app.models.user import User, UserRole
+from app.models.user_login_activity import UserLoginActivity
 
 __all__ = [
 	"AuditLog",
@@ -28,5 +29,6 @@ __all__ = [
 	"Stay",
 	"StayStatus",
 	"User",
+	"UserLoginActivity",
 	"UserRole",
 ]

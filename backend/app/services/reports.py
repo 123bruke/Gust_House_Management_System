@@ -13,6 +13,7 @@ from app.models.property import Property
 from app.models.reservation import Reservation, ReservationStatus
 from app.models.room import Room, RoomStatus
 from app.models.stay import Stay, StayStatus
+from app.models.user import User
 from app.schemas.reports import (
 	DailyManifestItem,
 	DailyManifestReport,
@@ -243,17 +244,23 @@ async def get_finance_report(
 		).all()
 	}
 	expense_bucket_stmt = (
-		select(expense_bucket_expr, Property.currency, func.sum(Expense.amount))
+		select(
+			expense_bucket_expr,
+			Property.currency,
+			func.sum(Expense.amount),
+			func.count(Expense.id),
+		)
 		.join(Property, Property.id == Expense.property_id)
 		.where(*expense_filters)
 		.group_by(expense_bucket_expr, Property.currency)
 	)
-	for key, currency_code, amount in (await session.execute(expense_bucket_stmt)).all():
+	for key, currency_code, amount, count in (await session.execute(expense_bucket_stmt)).all():
 		bucket = bucket_values.get(str(key))
 		if bucket is not None:
 			amount_value = Decimal(str(amount or "0.00"))
 			bucket.expenses += amount_value
 			bucket.expenses_by_currency[currency_code] = amount_value
+			bucket.transaction_count += int(count)
 	for bucket in buckets:
 		bucket.net = bucket.income - bucket.expenses
 		currencies = set(bucket.income_by_currency) | set(bucket.expenses_by_currency)
@@ -263,8 +270,11 @@ async def get_finance_report(
 			for code in currencies
 		}
 
-	transaction_count_stmt = select(func.count(Payment.id)).where(*payment_filters)
-	transaction_count = int((await session.execute(transaction_count_stmt)).scalar() or 0)
+	payment_count_stmt = select(func.count(Payment.id)).where(*payment_filters)
+	payment_count = int((await session.execute(payment_count_stmt)).scalar() or 0)
+	expense_count_stmt = select(func.count(Expense.id)).where(*expense_filters)
+	expense_count = int((await session.execute(expense_count_stmt)).scalar() or 0)
+	transaction_count = payment_count + expense_count
 	transaction_stmt = (
 		select(Payment, Guest.full_name, Room.room_number)
 		.join(Stay, Payment.stay_id == Stay.id)
@@ -277,6 +287,7 @@ async def get_finance_report(
 	transaction_rows = (await session.execute(transaction_stmt)).all()
 	transactions = [
 		FinanceTransaction(
+			kind="INCOME",
 			id=payment.id,
 			occurred_at=payment.paid_at or payment.created_at,
 			amount=payment.amount,
@@ -288,6 +299,32 @@ async def get_finance_report(
 		)
 		for payment, guest_name, room_number in transaction_rows
 	]
+	expense_transaction_stmt = (
+		select(Expense, Property.currency, User.full_name)
+		.join(Property, Property.id == Expense.property_id)
+		.outerjoin(User, User.id == Expense.recorded_by)
+		.where(*expense_filters)
+		.order_by(expense_time.desc(), Expense.id.desc())
+		.limit(_PAYMENT_TRANSACTION_LIMIT)
+	)
+	expense_transaction_rows = (await session.execute(expense_transaction_stmt)).all()
+	transactions.extend(
+		FinanceTransaction(
+			kind="EXPENSE",
+			id=expense.id,
+			occurred_at=expense.expense_date,
+			amount=expense.amount,
+			currency=currency_code,
+			source=expense.payment_method,
+			reference=expense.reason,
+			category=expense.category,
+			description=expense.description,
+			recorded_by=recorded_by,
+		)
+		for expense, currency_code, recorded_by in expense_transaction_rows
+	)
+	transactions.sort(key=lambda item: (item.occurred_at, item.id), reverse=True)
+	transactions = transactions[:_PAYMENT_TRANSACTION_LIMIT]
 	return FinanceReport(
 		period=period,
 		start_date=start_date,

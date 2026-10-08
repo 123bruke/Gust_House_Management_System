@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user, require_admin, require_role
 from app.db.session import get_db
 from app.models.guest import Guest
+from app.models.property import Property
 from app.models.user import User, UserRole
 from app.repositories.guest import GuestRepository
 from app.schemas.guest import GuestCreate, GuestRead, GuestUpdate
@@ -37,8 +38,33 @@ async def create_guest_endpoint(
 	current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.RECEPTION, UserRole.SUPER_ADMIN)),
 	session: AsyncSession = Depends(get_db),
 ) -> Guest:
-	prop_id = current_user.property_id
-	return await create_guest(session, user_id=current_user.id, property_id=prop_id, **payload.model_dump())
+	values = payload.model_dump(exclude={"property_id"})
+	if current_user.role == UserRole.SUPER_ADMIN:
+		if payload.property_id is None:
+			raise HTTPException(
+				status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+				detail="Select a property for this guest",
+			)
+		property_record = await session.get(Property, payload.property_id)
+		if property_record is None or not property_record.is_active:
+			raise HTTPException(
+				status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+				detail="Select an active property",
+			)
+		prop_id = property_record.id
+	else:
+		prop_id = current_user.property_id
+		if prop_id is None:
+			raise HTTPException(
+				status_code=status.HTTP_403_FORBIDDEN,
+				detail="Your account is not assigned to a property",
+			)
+	return await create_guest(
+		session,
+		user_id=current_user.id,
+		property_id=prop_id,
+		**values,
+	)
 
 
 @router.get("/{guest_id}", response_model=GuestRead)

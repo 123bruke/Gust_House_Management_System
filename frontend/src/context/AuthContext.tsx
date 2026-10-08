@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { getCurrentUser, login as loginRequest } from '../api/auth'
+import { getCurrentUser, login as loginRequest, sendHeartbeat } from '../api/auth'
 import { clearSession, getApiError, TOKEN_KEY } from '../api/client'
 import { AuthContext } from './auth-context'
 import type { Role, User } from '../types/api'
@@ -12,6 +12,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!localStorage.getItem(TOKEN_KEY)) return
     getCurrentUser().then(setUser).catch(() => { clearSession(); setUser(null) }).finally(() => setIsLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    const updatePresence = () => {
+      sendHeartbeat().catch((error: unknown) => {
+        console.error('Failed to update staff presence:', error)
+      })
+    }
+    updatePresence()
+    const intervalId = window.setInterval(updatePresence, 30_000)
+    return () => window.clearInterval(intervalId)
+  }, [user?.id])
 
   async function login(username: string, password: string, role: Role) {
     try {

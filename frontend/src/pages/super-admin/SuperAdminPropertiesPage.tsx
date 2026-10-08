@@ -20,19 +20,23 @@ import {
   Wallet,
   BarChart3,
   ArrowUpRight,
+  Wifi,
+  WifiOff,
 } from '../../components/common/MaterialIcon'
 import { PageHeader } from '../../components/common/PageHeader'
 import { Button } from '../../components/common/Button'
 import { Modal } from '../../components/common/Modal'
 import { AddPropertyModal } from '../../components/modals/AddPropertyModal'
-import { getProperties, getSuperAdminStats, togglePropertyStatus } from '../../api/superAdmin'
+import { getProperties, getStaffActivity, getSuperAdminStats, togglePropertyStatus } from '../../api/superAdmin'
 import { getApiError } from '../../api/client'
 import { useI18n } from '../../i18n'
-import type { Property, SuperAdminStats } from '../../types/api'
+import type { Property, StaffActivity, SuperAdminStats } from '../../types/api'
 
 export function SuperAdminPropertiesPage() {
   const { t, formatDate, formatNumber, formatMoney } = useI18n()
   const [properties, setProperties] = useState<Property[]>([])
+  const [staffActivity, setStaffActivity] = useState<StaffActivity[]>([])
+  const [staffActivityLoading, setStaffActivityLoading] = useState(true)
   const [stats, setStats] = useState<SuperAdminStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState('')
@@ -67,6 +71,28 @@ export function SuperAdminPropertiesPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const loadActivity = () => {
+      getStaffActivity()
+        .then((activity) => {
+          if (mounted) setStaffActivity(activity)
+        })
+        .catch((err: unknown) => {
+          if (mounted) setErrorMsg(getApiError(err, t('sa.errorStaffActivity')))
+        })
+        .finally(() => {
+          if (mounted) setStaffActivityLoading(false)
+        })
+    }
+    loadActivity()
+    const intervalId = window.setInterval(loadActivity, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(intervalId)
+    }
+  }, [t])
 
   const filteredProperties = useMemo(() => {
     return properties.filter((prop) => {
@@ -268,6 +294,72 @@ export function SuperAdminPropertiesPage() {
           </div>
         </div>
       </div>
+
+      <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xs">
+        <div className="border-b border-neutral-200 p-4">
+          <h2 className="text-base font-bold text-neutral-900">{t('sa.staffActivity')}</h2>
+          <p className="mt-1 text-xs text-neutral-500">{t('sa.staffActivitySub')}</p>
+        </div>
+        {staffActivityLoading ? (
+          <p className="p-6 text-center text-sm text-neutral-500">{t('common.loading')}</p>
+        ) : staffActivity.length === 0 ? (
+          <p className="p-6 text-center text-sm text-neutral-500">{t('sa.noStaffActivity')}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+                <tr>
+                  <th className="px-4 py-3">{t('common.name')}</th>
+                  <th className="px-4 py-3">{t('common.property')}</th>
+                  <th className="px-4 py-3">{t('common.role')}</th>
+                  <th className="px-4 py-3">{t('common.status')}</th>
+                  <th className="px-4 py-3">{t('sa.activeDays')}</th>
+                  <th className="px-4 py-3">{t('sa.lastActive')}</th>
+                  <th className="px-4 py-3">{t('sa.passwordChangedAt')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {staffActivity.map((staff) => (
+                  <tr key={staff.id} className="hover:bg-neutral-50">
+                    <td className="px-4 py-3">
+                      <span className="block font-semibold text-neutral-900">{staff.full_name}</span>
+                      <span className="text-xs text-neutral-500">{staff.username}</span>
+                    </td>
+                    <td className="px-4 py-3 text-neutral-700">{staff.property_name || '—'}</td>
+                    <td className="px-4 py-3 text-neutral-700">
+                      {staff.role === 'ADMIN' ? t('settings.administrator') : t('settings.receptionDesk')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          staff.is_online
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-rose-50 text-rose-700'
+                        }`}
+                      >
+                        {staff.is_online ? <Wifi size={14} /> : <WifiOff size={14} />}
+                        {staff.is_online ? t('sa.online') : t('sa.offline')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-neutral-700">
+                      {formatNumber(staff.active_days)}
+                    </td>
+                    <td className="px-4 py-3 text-neutral-600">
+                      {staff.last_seen_at ? formatDate(staff.last_seen_at, 'datetime') : t('sa.neverSeen')}
+                    </td>
+                    <td className="px-4 py-3 text-neutral-600">
+                      {formatDate(staff.password_changed_at, 'datetime')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="border-t border-neutral-100 px-4 py-3 text-xs text-neutral-500">
+          {t('sa.passwordVisibilityNote')}
+        </p>
+      </section>
 
       {/* Search and Filters Bar */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">

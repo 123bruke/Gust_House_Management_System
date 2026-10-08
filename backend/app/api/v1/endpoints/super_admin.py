@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -14,7 +15,9 @@ from app.models.property import Property
 from app.models.room import Room
 from app.models.stay import Stay, StayStatus
 from app.models.user import User, UserRole
+from app.models.user_login_activity import UserLoginActivity
 from app.schemas.property import PropertyCreate, PropertyRead, PropertyUpdate, SuperAdminStats
+from app.schemas.user import StaffActivityRead
 from app.services.user import DuplicateUsernameError, create_user
 
 router = APIRouter(
@@ -22,6 +25,50 @@ router = APIRouter(
 	tags=["super-admin"],
 	dependencies=[Depends(require_super_admin)],
 )
+
+
+@router.get("/staff-activity", response_model=list[StaffActivityRead])
+async def list_staff_activity(
+	session: AsyncSession = Depends(get_db),
+) -> list[StaffActivityRead]:
+	users = (
+		await session.execute(
+			select(User, Property.name)
+			.outerjoin(Property, Property.id == User.property_id)
+			.where(User.role.in_([UserRole.ADMIN.value, UserRole.RECEPTION.value]))
+			.order_by(Property.name, User.full_name)
+		)
+	).all()
+	login_days = dict(
+		(
+			await session.execute(
+				select(
+					UserLoginActivity.user_id,
+					func.count(
+						func.distinct(
+							func.date(func.timezone("Africa/Addis_Ababa", UserLoginActivity.logged_in_at))
+						)
+					),
+				).group_by(UserLoginActivity.user_id)
+			)
+		).all()
+	)
+	now = datetime.now(timezone.utc)
+	online_since = now - timedelta(seconds=90)
+	return [
+		StaffActivityRead(
+			id=user.id,
+			full_name=user.full_name,
+			username=user.username,
+			role=UserRole(user.role),
+			property_name=property_name,
+			last_seen_at=user.last_seen_at,
+			is_online=bool(user.last_seen_at and user.last_seen_at >= online_since),
+			active_days=int(login_days.get(user.id, 0)),
+			password_changed_at=user.password_changed_at,
+		)
+		for user, property_name in users
+	]
 
 
 @router.get("/stats", response_model=SuperAdminStats)

@@ -64,9 +64,9 @@ async def update_settings(
 		prop.name = data.property_name
 	if data.currency is not None:
 		prop.currency = data.currency
-	if data.contact_phone is not None:
+	if "contact_phone" in data.model_fields_set:
 		prop.contact_phone = data.contact_phone
-	if data.address is not None:
+	if "address" in data.model_fields_set:
 		prop.address = data.address
 
 	session.add(

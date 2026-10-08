@@ -1,8 +1,13 @@
 import { api } from './client'
-import type { Property, PropertyCreate, PropertyUpdate, SuperAdminStats } from '../types/api'
+import type { Property, PropertyCreate, PropertyUpdate, StaffActivity, SuperAdminStats } from '../types/api'
 
 export async function getSuperAdminStats(): Promise<SuperAdminStats> {
   const res = await api.get<SuperAdminStats>('/super-admin/stats')
+  return res.data
+}
+
+export async function getStaffActivity(): Promise<StaffActivity[]> {
+  const res = await api.get<StaffActivity[]>('/super-admin/staff-activity')
   return res.data
 }
 
