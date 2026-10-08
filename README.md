@@ -143,3 +143,14 @@ npm run dev
   wildcard for a public deployment.
 - Back up the PostgreSQL database regularly and restrict access to authorized
   staff.
+
+### Deploying the frontend to Vercel
+
+The repository-level `vercel.json` builds the Vite app in `frontend` and serves
+its output from `frontend/dist`. In Vercel, set the project Root Directory to
+the repository root and redeploy. The rewrite configuration serves the SPA
+entry point for client-side routes such as `/login` and `/dashboard`.
+
+Set `VITE_API_BASE_URL` in the Vercel project environment variables to the
+deployed backend API base URL, including `/api/v1` (for example,
+`https://api.example.com/api/v1`).
