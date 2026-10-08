@@ -151,6 +151,30 @@ its output from `frontend/dist`. In Vercel, set the project Root Directory to
 the repository root and redeploy. The rewrite configuration serves the SPA
 entry point for client-side routes such as `/login` and `/dashboard`.
 
-Set `VITE_API_BASE_URL` in the Vercel project environment variables to the
-deployed backend API base URL, including `/api/v1` (for example,
-`https://api.example.com/api/v1`).
+Vercel hosts the static frontend; it does not start the FastAPI backend or
+provide PostgreSQL. Deploy the backend and database separately using the
+repository's `render.yaml` Blueprint:
+
+1. Push the repository to GitHub and create a Blueprint in the Render
+   dashboard using this repository.
+2. The API service uses the repository root as its Root Directory, with
+   commands that explicitly run from `backend`. If you created a Render Web
+   Service manually instead of using the Blueprint, set its Root Directory to
+   the repository root, Build Command to
+   `pip install -r backend/requirements.txt && cd backend && alembic upgrade head`,
+   and Start Command to
+   `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+3. Render will request `CORS_ORIGINS`. Enter the exact Vercel site origin
+   (for example, `https://your-project.vercel.app`) without a trailing slash.
+4. Wait for the API deployment to finish, then confirm
+   `https://<your-render-service>.onrender.com/health` returns `{"status":"ok"}`.
+5. In Vercel, add `VITE_API_BASE_URL` for Production and Preview environments,
+   set to `https://<your-render-service>.onrender.com/api/v1`, and redeploy the
+   frontend.
+
+The Render Blueprint creates a paid persistent PostgreSQL database; review its
+price in Render before creating the Blueprint. The API web service uses the
+free plan, which can spin down when idle and take about a minute to wake. Change
+its plan in Render if you need consistently warm service. Production builds
+fail if `VITE_API_BASE_URL` is missing, rather than silently pointing sign-in
+requests at the visitor's own computer.
