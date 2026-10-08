@@ -120,6 +120,9 @@ database and create the first administrator:
 python -m alembic upgrade head
 python -m app.cli create-admin --phone-number 0908296773 --full-name "System Administrator"
 python -m uvicorn app.main:app --reload
+backend command ............. 
+Set-Location "C:\Users\FSC CORE i5\Downloads\guest-house-management-master\backend"
+.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
 In a second terminal, start the frontend:

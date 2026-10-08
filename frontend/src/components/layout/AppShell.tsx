@@ -122,7 +122,9 @@ export function AppShell() {
           {/* Brand Header */}
           <div className="h-[88px] px-4 flex items-center justify-between border-b border-[#F0F0F0]">
             <div className="flex items-center gap-3">
-              <img src="/roomtracker-logo.png" alt="RoomTracker" className="h-14 w-20 shrink-0 object-contain" />
+              <span className="flex h-14 w-20 shrink-0 items-center justify-center rounded-md bg-white dark:bg-black">
+                <img src="/roomtracker-logo.png" alt="RoomTracker" className="h-full w-full object-contain" />
+              </span>
               <div className="min-w-0">
                 <span className="block text-base font-bold text-[#222222] tracking-tight leading-tight">
                   {user?.role === 'SUPER_ADMIN' ? t('nav.platformConsole') : (user?.property_name || 'Family Guest House')}
