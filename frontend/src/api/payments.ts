@@ -5,12 +5,14 @@ export async function recordManualPayment(data: {
   stay_id: number
   amount: number | string
   currency?: string
+  exchange_rate?: number | string
   payment_method: 'CASH' | 'TELEBIRR' | 'CBE_BIRR' | 'BANK_TRANSFER' | 'CREDIT' | 'OTHER'
   reference?: string
 }): Promise<Payment> {
   const res = await api.post<Payment>(`/stays/${data.stay_id}/payments`, {
     amount: String(data.amount),
     currency: data.currency,
+    exchange_rate: data.exchange_rate === undefined ? undefined : String(data.exchange_rate),
     payment_method: data.payment_method,
     reference: data.reference,
   })

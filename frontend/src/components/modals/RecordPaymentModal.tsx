@@ -39,7 +39,9 @@ export function RecordPaymentModal({
   const [method, setMethod] = useState<PaymentMethodType>('CASH')
   const [bankName, setBankName] = useState<string>('')
   const [amount, setAmount] = useState<string>('')
+  const [propertyAmount, setPropertyAmount] = useState<string>('')
   const [paymentCurrency, setPaymentCurrency] = useState('ETB')
+  const [exchangeRate, setExchangeRate] = useState('')
   const [reference, setReference] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -49,16 +51,15 @@ export function RecordPaymentModal({
       setLoading(true)
       setError('')
       setBankName('')
+      setExchangeRate('')
       getStayFinancialSummary(stayId)
         .then((res) => {
           setSummary(res)
           setPaymentCurrency(res.currency)
           const bal = Number(res.balance || 0)
-          if (bal > 0) {
-            setAmount(bal.toFixed(2))
-          } else {
-            setAmount('0.00')
-          }
+          const initialAmount = bal > 0 ? bal.toFixed(2) : '0.00'
+          setAmount(initialAmount)
+          setPropertyAmount(initialAmount)
         })
         .catch((err) => {
           console.error(err)
@@ -82,6 +83,37 @@ export function RecordPaymentModal({
         ? formatMoney(value)
         : `${currencyCode} ${formatNumber(value)}`
 
+  function handleCurrencyChange(nextCurrency: string) {
+    setPaymentCurrency(nextCurrency)
+    if (nextCurrency === propertyCurrency) {
+      setAmount(propertyAmount)
+      return
+    }
+    const rate = Number(exchangeRate)
+    setAmount(rate > 0 ? (Number(propertyAmount) / rate).toFixed(2) : '')
+  }
+
+  function handleAmountChange(nextAmount: string) {
+    setAmount(nextAmount)
+    if (paymentCurrency === propertyCurrency) {
+      setPropertyAmount(nextAmount)
+      return
+    }
+    const rate = Number(exchangeRate)
+    if (nextAmount === '') {
+      setPropertyAmount('')
+    } else if (rate > 0) {
+      setPropertyAmount((Number(nextAmount) * rate).toFixed(2))
+    }
+  }
+
+  function handleExchangeRateChange(nextRate: string) {
+    setExchangeRate(nextRate)
+    const rate = Number(nextRate)
+    const baseAmount = Number(propertyAmount)
+    setAmount(rate > 0 && baseAmount > 0 ? (baseAmount / rate).toFixed(2) : '')
+  }
+
   const handleSelectMethod = (selectedMethod: PaymentMethodType) => {
     setMethod(selectedMethod)
     setError('')
@@ -94,6 +126,12 @@ export function RecordPaymentModal({
     const numAmount = Number(amount)
     if (isNaN(numAmount) || numAmount <= 0) {
       setError(t('payment.errAmount'))
+      return
+    }
+
+    const rate = Number(exchangeRate)
+    if (paymentCurrency !== propertyCurrency && (!Number.isFinite(rate) || rate <= 0)) {
+      setError(t('payment.errExchangeRate'))
       return
     }
 
@@ -127,6 +165,7 @@ export function RecordPaymentModal({
         stay_id: stayId,
         amount: numAmount.toFixed(2),
         currency: paymentCurrency,
+        exchange_rate: paymentCurrency !== propertyCurrency ? exchangeRate : undefined,
         payment_method: method,
         reference: finalReference,
       })
@@ -191,7 +230,7 @@ export function RecordPaymentModal({
           </label>
           <select
             value={paymentCurrency}
-            onChange={(event) => setPaymentCurrency(event.target.value)}
+            onChange={(event) => handleCurrencyChange(event.target.value)}
             disabled={loading}
             className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm"
           >
@@ -208,6 +247,20 @@ export function RecordPaymentModal({
             </p>
           )}
         </div>
+
+        {paymentCurrency !== propertyCurrency && (
+          <Input
+            type="number"
+            min="0.000001"
+            step="0.000001"
+            required
+            disabled={loading}
+            value={exchangeRate}
+            onChange={(event) => handleExchangeRateChange(event.target.value)}
+            label={t('payment.exchangeRate', { currency: propertyCurrency })}
+            helperText={t('payment.exchangeRateHelper', { currency: propertyCurrency })}
+          />
+        )}
 
         {/* Payment Method Selector */}
         <div>
@@ -328,9 +381,9 @@ export function RecordPaymentModal({
             step="0.01"
             placeholder="e.g. 1500.00"
             required
-            disabled={loading}
+            disabled={loading || (paymentCurrency !== propertyCurrency && Number(exchangeRate) <= 0)}
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => handleAmountChange(e.target.value)}
           />
         </div>
 
