@@ -120,12 +120,10 @@ export function AppShell() {
       >
         <div className="flex flex-col h-full">
           {/* Brand Header */}
-          <div className="h-[72px] px-6 flex items-center justify-between border-b border-[#F0F0F0]">
+          <div className="h-[88px] px-4 flex items-center justify-between border-b border-[#F0F0F0]">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#FF385C] to-[#E31C5F] flex items-center justify-center text-white shadow-[0_4px_10px_rgba(255,56,92,0.35)]">
-                <Icon name="cottage" size={20} />
-              </div>
-              <div>
+              <img src="/roomtracker-logo.png" alt="RoomTracker" className="h-14 w-20 shrink-0 object-contain" />
+              <div className="min-w-0">
                 <span className="block text-base font-bold text-[#222222] tracking-tight leading-tight">
                   {user?.role === 'SUPER_ADMIN' ? t('nav.platformConsole') : (user?.property_name || 'Family Guest House')}
                 </span>

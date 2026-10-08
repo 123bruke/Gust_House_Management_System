@@ -42,20 +42,7 @@ export function LoginPage() {
       {/* Top Header */}
       <header className="w-full min-h-18 sm:min-h-20 px-4 sm:px-12 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-faint)] bg-[var(--surface)]">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#FF385C] flex items-center justify-center text-white shadow-xs">
-            <svg
-              className="w-5 h-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-              <polyline points="9 22 9 12 15 12 15 22" />
-            </svg>
-          </div>
+          <img src="/roomtracker-logo.png" alt="RoomTracker" className="h-14 w-20 shrink-0 object-contain sm:h-16 sm:w-24" />
           <div>
             <span className="block text-base font-bold text-[var(--ink)] tracking-tight leading-tight">
               Family Guest House
