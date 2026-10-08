@@ -1,15 +1,19 @@
 import { useState } from 'react'
-import { Eye, EyeOff, HelpCircle, LockKeyhole, ShieldCheck, UserRound } from '../../components/common/MaterialIcon'
+import { Eye, EyeOff, HelpCircle, Icon, LockKeyhole, ShieldCheck, UserRound } from '../../components/common/MaterialIcon'
 import { useAuth } from '../../hooks/useAuth'
+import { useTheme } from '../../hooks/useTheme'
 import { useI18n } from '../../i18n'
 import { Button } from '../../components/common/Button'
 import { Modal } from '../../components/common/Modal'
+import type { Role } from '../../types/api'
 
 export function LoginPage() {
   const { login, user, isAuthenticated, logout } = useAuth()
-  const { t } = useI18n()
+  const { t, lang, setLang } = useI18n()
+  const { theme, toggleTheme } = useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState<Role>('ADMIN')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -20,7 +24,7 @@ export function LoginPage() {
     setError('')
     setSubmitting(true)
     try {
-      await login(username.trim(), password)
+      await login(username.trim(), password, role)
       window.location.href = '/dashboard'
     } catch (loginError) {
       setError(
@@ -34,9 +38,9 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FFFFFF] flex flex-col justify-between selection:bg-[#FFF0F2] selection:text-[#FF385C]">
+    <div className="min-h-screen bg-[var(--surface)] text-[var(--ink)] flex flex-col justify-between selection:bg-[#FFF0F2] selection:text-[#FF385C]">
       {/* Top Header */}
-      <header className="w-full h-18 sm:h-20 px-6 sm:px-12 flex items-center justify-between border-b border-[#EEEEEE] bg-white">
+      <header className="w-full min-h-18 sm:min-h-20 px-4 sm:px-12 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-faint)] bg-[var(--surface)]">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-[#FF385C] flex items-center justify-center text-white shadow-xs">
             <svg
@@ -53,29 +57,74 @@ export function LoginPage() {
             </svg>
           </div>
           <div>
-            <span className="block text-base font-bold text-[#222222] tracking-tight leading-tight">
+            <span className="block text-base font-bold text-[var(--ink)] tracking-tight leading-tight">
               Family Guest House
             </span>
-            <span className="block text-[11px] font-medium text-[#717171]">
+            <span className="block text-[11px] font-medium text-[var(--ink-muted)]">
               {t('nav.managementSystem')}
             </span>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setHelpOpen(true)}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#717171] hover:text-[#222222] transition-colors py-2 px-3 rounded-full hover:bg-[#F7F7F7]"
-        >
-          <HelpCircle size={15} />
-          <span>{t('login.helpSupport')}</span>
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div
+            className="inline-flex items-center rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-0.5"
+            role="group"
+            aria-label={t('login.languageSelection')}
+          >
+            <button
+              type="button"
+              onClick={() => setLang('am')}
+              aria-label={t('lang.amharic')}
+              aria-pressed={lang === 'am'}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                lang === 'am'
+                  ? 'bg-[var(--surface)] text-[var(--ink)] shadow-sm'
+                  : 'text-[var(--ink-muted)] hover:text-[var(--ink)]'
+              }`}
+            >
+              አማ
+            </button>
+            <button
+              type="button"
+              onClick={() => setLang('en')}
+              aria-label={t('lang.english')}
+              aria-pressed={lang === 'en'}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                lang === 'en'
+                  ? 'bg-[var(--surface)] text-[var(--ink)] shadow-sm'
+                  : 'text-[var(--ink-muted)] hover:text-[var(--ink)]'
+              }`}
+            >
+              EN
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? t('theme.toLight') : t('theme.toNight')}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] px-2.5 py-2 text-xs font-semibold text-[var(--ink-muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+          >
+            <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} size={17} />
+            <span>{theme === 'dark' ? t('theme.lightMode') : t('theme.nightMode')}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-[var(--ink-muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+          >
+            <HelpCircle size={15} />
+            <span>{t('login.helpSupport')}</span>
+          </button>
+        </div>
       </header>
 
       {/* Main Centered Login Section */}
       <main className="flex-1 flex items-center justify-center p-6 py-12 sm:py-16">
         <div className="w-full max-w-md animate-fade-in">
-          <div className="bg-white rounded-3xl border border-[#DDDDDD] p-7 sm:p-10 shadow-[0_4px_24px_rgba(0,0,0,0.04)]">
+          <div className="bg-[var(--surface)] rounded-3xl border border-[var(--line)] p-7 sm:p-10 shadow-[0_4px_24px_rgba(0,0,0,0.12)]">
             {isAuthenticated && user ? (
               /* Already Signed In View */
               <div className="text-center space-y-5">
@@ -84,12 +133,16 @@ export function LoginPage() {
                   <span>{t('login.currentlySignedIn')}</span>
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-[#222222] tracking-tight">
+                  <h1 className="text-2xl font-bold text-[var(--ink)] tracking-tight">
                     {t('login.welcomeBackName', { name: user.full_name })}
                   </h1>
-                  <p className="text-xs text-[#717171] mt-1.5">
+                  <p className="text-xs text-[var(--ink-muted)] mt-1.5">
                     {t('login.signedInAs', {
-                      role: user.role === 'ADMIN' ? t('role.administrator') : t('role.receptionDesk'),
+                      role: user.role === 'SUPER_ADMIN'
+                        ? t('role.superAdmin')
+                        : user.role === 'ADMIN'
+                          ? t('role.administrator')
+                          : t('role.receptionist'),
                     })}{' '}
                     (@{user.username}).
                   </p>
@@ -108,7 +161,7 @@ export function LoginPage() {
                     type="button"
                     variant="outline"
                     size="lg"
-                    className="w-full h-11 text-xs font-semibold rounded-xl text-[#C13515] border-[#DDDDDD] hover:bg-[#FFF7F5]"
+                    className="w-full h-11 text-xs font-semibold rounded-xl text-[#C13515] border-[var(--line)] hover:bg-[#FFF7F5]"
                     onClick={() => logout()}
                   >
                     {t('login.signOutSwitchUser')}
@@ -124,36 +177,52 @@ export function LoginPage() {
                     <ShieldCheck size={13} />
                     <span>{t('login.staffPortal')}</span>
                   </div>
-                  <h1 className="text-2xl sm:text-3xl font-bold text-[#222222] tracking-tight">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-[var(--ink)] tracking-tight">
                     {t('login.welcomeBack')}
                   </h1>
-                  <p className="text-sm text-[#717171] mt-1.5 leading-relaxed">
+                  <p className="text-sm text-[var(--ink-muted)] mt-1.5 leading-relaxed">
                     {t('login.signInPrompt')}
                   </p>
                 </div>
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-5">
+                  <div className="space-y-1.5">
+                    <label htmlFor="role" className="block text-xs font-semibold text-[var(--ink)]">
+                      {t('login.roleLabel')}
+                    </label>
+                    <select
+                      id="role"
+                      required
+                      value={role}
+                      onChange={(event) => setRole(event.target.value as Role)}
+                      className="h-12 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 text-sm text-[var(--ink)] focus:border-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-[var(--ink)]"
+                    >
+                      <option value="ADMIN">{t('role.administrator')}</option>
+                      <option value="SUPER_ADMIN">{t('role.superAdmin')}</option>
+                      <option value="RECEPTION">{t('role.receptionist')}</option>
+                    </select>
+                  </div>
                   {/* Username field */}
                   <div className="space-y-1.5">
                     <label
                       htmlFor="username"
-                      className="block text-xs font-semibold text-[#222222]"
+                      className="block text-xs font-semibold text-[var(--ink)]"
                     >
-                      {t('login.phoneNumber')}
+                      {t('login.usernameOrPhone')}
                     </label>
-                    <div className="relative flex items-center h-12 rounded-xl border border-[#DDDDDD] hover:border-[#B0B0B0] focus-within:border-[#222222] focus-within:ring-1 focus-within:ring-[#222222] bg-white px-3.5 transition-all">
-                      <UserRound size={17} className="text-[#717171] shrink-0 mr-2.5" />
+                    <div className="relative flex items-center h-12 rounded-xl border border-[var(--line)] hover:border-[var(--line-strong)] focus-within:border-[var(--ink)] focus-within:ring-1 focus-within:ring-[var(--ink)] bg-[var(--surface)] px-3.5 transition-all">
+                      <UserRound size={17} className="text-[var(--ink-muted)] shrink-0 mr-2.5" />
                       <input
                         id="username"
                         required
                         autoFocus
-                        autoComplete="tel"
-                        type="tel"
+                        autoComplete="username"
+                        type="text"
                         value={username}
-                        onChange={(e) => setUsername(e.target.value.replace(/[^0-9+]/g, ''))}
-                        placeholder="e.g. 0908296773"
-                        className="w-full bg-transparent text-sm text-[#222222] placeholder:text-[#999999] focus:outline-none"
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder={t('login.usernameOrPhone')}
+                        className="w-full bg-transparent text-sm text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:outline-none"
                       />
                     </div>
                   </div>
@@ -162,12 +231,12 @@ export function LoginPage() {
                   <div className="space-y-1.5">
                     <label
                       htmlFor="password"
-                      className="block text-xs font-semibold text-[#222222]"
+                      className="block text-xs font-semibold text-[var(--ink)]"
                     >
                       {t('login.password')}
                     </label>
-                    <div className="relative flex items-center h-12 rounded-xl border border-[#DDDDDD] hover:border-[#B0B0B0] focus-within:border-[#222222] focus-within:ring-1 focus-within:ring-[#222222] bg-white px-3.5 transition-all">
-                      <LockKeyhole size={17} className="text-[#717171] shrink-0 mr-2.5" />
+                    <div className="relative flex items-center h-12 rounded-xl border border-[var(--line)] hover:border-[var(--line-strong)] focus-within:border-[var(--ink)] focus-within:ring-1 focus-within:ring-[var(--ink)] bg-[var(--surface)] px-3.5 transition-all">
+                      <LockKeyhole size={17} className="text-[var(--ink-muted)] shrink-0 mr-2.5" />
                       <input
                         id="password"
                         required
@@ -176,12 +245,12 @@ export function LoginPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder={t('login.enterPassword')}
-                        className="w-full bg-transparent text-sm text-[#222222] placeholder:text-[#999999] focus:outline-none"
+                        className="w-full bg-transparent text-sm text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:outline-none"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword((prev) => !prev)}
-                        className="p-1 text-[#717171] hover:text-[#222222] focus:outline-none transition-colors cursor-pointer"
+                        className="p-1 text-[var(--ink-muted)] hover:text-[var(--ink)] focus:outline-none transition-colors cursor-pointer"
                         aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
                       >
                         {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -193,9 +262,9 @@ export function LoginPage() {
                   {error && (
                     <div
                       role="alert"
-                      className="p-3.5 rounded-xl bg-[#FFF7F5] border border-[#F2D1CA] text-xs text-[#C13515] leading-relaxed flex items-start gap-2.5"
+                      className="p-3.5 rounded-xl bg-[var(--danger-tint)] border border-[var(--line)] text-xs text-[var(--danger)] leading-relaxed flex items-start gap-2.5"
                     >
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#C13515] mt-1.5 shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-[var(--danger)] mt-1.5 shrink-0" />
                       <span>{error}</span>
                     </div>
                   )}
@@ -215,9 +284,9 @@ export function LoginPage() {
             )}
 
             {/* Note */}
-            <div className="mt-8 pt-6 border-t border-[#F0F0F0] text-center">
-              <span className="text-xs text-[#717171] flex items-center justify-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#008A05]" />
+            <div className="mt-8 pt-6 border-t border-[var(--line-faint)] text-center">
+              <span className="text-xs text-[var(--ink-muted)] flex items-center justify-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--success-soft)]" />
                 {t('login.authorizedOnly')}
               </span>
             </div>
@@ -226,10 +295,10 @@ export function LoginPage() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full py-6 px-6 text-center text-xs text-[#717171] border-t border-[#EEEEEE]">
+      <footer className="w-full py-6 px-6 text-center text-xs text-[var(--ink-muted)] border-t border-[var(--line-faint)]">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>© {new Date().getFullYear()} Family Guest House. {t('login.allRightsReserved')}</span>
-          <div className="flex items-center gap-4 text-xs text-[#717171]">
+          <div className="flex items-center gap-4 text-xs text-[var(--ink-muted)]">
             <span>{t('login.privacy')}</span>
             <span>·</span>
             <span>{t('login.terms')}</span>
@@ -246,21 +315,17 @@ export function LoginPage() {
         title={t('login.needHelp')}
         description={t('login.helpDescription')}
       >
-        <div className="space-y-4 text-xs text-[#717171] leading-relaxed">
+        <div className="space-y-4 text-xs text-[var(--ink-muted)] leading-relaxed">
           <p>
-            <strong className="text-[#222222]">{t('login.defaultAccounts')}</strong>
-            <br />
-            • {t('login.adminUsername')} <code className="bg-[#F7F7F7] px-1.5 py-0.5 rounded font-mono">admin</code>
-            <br />
-            • {t('login.receptionUsername')} <code className="bg-[#F7F7F7] px-1.5 py-0.5 rounded font-mono">reception</code>
+            {t('login.helpCredentials')}
           </p>
           <p>
-            <strong className="text-[#222222]">{t('login.forgotPassword')}</strong>
+            <strong className="text-[var(--ink)]">{t('login.forgotPassword')}</strong>
             <br />
             {t('login.forgotHint')}
           </p>
-          <div className="pt-2 border-t border-[#F0F0F0]">
-            <p className="text-[11px] text-[#999999]">
+          <div className="pt-2 border-t border-[var(--line-faint)]">
+            <p className="text-[11px] text-[var(--ink-faint)]">
               {t('login.frontDeskInternal')}
             </p>
           </div>

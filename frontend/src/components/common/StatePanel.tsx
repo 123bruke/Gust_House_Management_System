@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AlertCircle, ArrowRight, Loader2, Sparkles } from './MaterialIcon'
+import { AlertCircle, ArrowRight, Info, Loader2 } from './MaterialIcon'
 import { Button } from './Button'
 import { useI18n } from '../../i18n'
 
@@ -31,7 +31,7 @@ export function EmptyState({
       className={`flex flex-col items-center justify-center text-center p-8 sm:p-12 bg-white rounded-2xl border border-[#DDDDDD] ${className}`}
     >
       <div className="w-12 h-12 rounded-2xl bg-[#F7F7F7] border border-[#E5E5E5] flex items-center justify-center text-[#717171] mb-4">
-        {icon || <Sparkles size={22} className="text-[#FF385C]" />}
+        {icon || <Info size={22} className="text-[#FF385C]" />}
       </div>
       <h3 className="text-base font-semibold text-[#222222] tracking-tight mb-1.5">
         {title}

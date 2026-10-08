@@ -118,6 +118,7 @@ export interface Payment {
   id: number
   stay_id: number
   amount: string
+  currency: string
   payment_method: string
   status: string
   reference: string | null
@@ -131,6 +132,8 @@ export interface FinancialSummary {
   total_due: string
   total_paid: string
   balance: string
+  currency: string
+  payments_by_currency: Record<string, string>
 }
 
 export interface Expense {
@@ -148,8 +151,11 @@ export interface Expense {
 export interface DailyReport {
   date: string
   todays_income: string
+  todays_income_by_currency: Record<string, string>
   todays_expenses: string
+  todays_expenses_by_currency: Record<string, string>
   net_income: string
+  net_income_by_currency: Record<string, string>
   occupied_rooms: number
   available_rooms: number
   expected_rooms: number
@@ -158,13 +164,17 @@ export interface DailyReport {
   check_ins_count: number
   check_outs_count: number
   penalties_total: string
+  penalties_by_currency: Record<string, string>
   outstanding_credit: string
+  outstanding_credit_by_currency: Record<string, string>
 }
 
 export interface PaymentMethodIncome {
   method: string
   amount: string
   count: number
+  amount_by_currency: Record<string, string>
+  percentage_by_currency: Record<string, number>
 }
 
 export interface IncomeAnalysisReport {
@@ -173,12 +183,15 @@ export interface IncomeAnalysisReport {
   end_date: string
   by_method: PaymentMethodIncome[]
   total_income: string
+  total_income_by_currency: Record<string, string>
 }
 
 export interface ExpenseCategoryItem {
   category: string
   amount: string
   percentage: number
+  amount_by_currency: Record<string, string>
+  percentage_by_currency: Record<string, number>
 }
 
 export interface ExpenseAnalysisReport {
@@ -187,14 +200,18 @@ export interface ExpenseAnalysisReport {
   end_date: string
   by_category: ExpenseCategoryItem[]
   total_expenses: string
+  total_expenses_by_currency: Record<string, string>
 }
 
 export interface DaySummary {
   day: string
   date: string
   income: string
+  income_by_currency: Record<string, string>
   expense: string
+  expense_by_currency: Record<string, string>
   net: string
+  net_by_currency: Record<string, string>
 }
 
 export interface WeeklyReport {
@@ -202,8 +219,11 @@ export interface WeeklyReport {
   end_date: string
   days: DaySummary[]
   total_income: string
+  total_income_by_currency: Record<string, string>
   total_expense: string
+  total_expense_by_currency: Record<string, string>
   net_income: string
+  net_income_by_currency: Record<string, string>
 }
 
 export type FinancePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly'
@@ -215,18 +235,23 @@ export interface FinanceBucket {
   expenses: string
   net: string
   transaction_count: number
+  income_by_currency: Record<string, string>
+  expenses_by_currency: Record<string, string>
+  net_by_currency: Record<string, string>
 }
 
 export interface FinanceSource {
   name: string
   amount: string
   count: number
+  amount_by_currency: Record<string, string>
 }
 
 export interface FinanceTransaction {
   id: number
   occurred_at: string
   amount: string
+  currency: string
   source: string
   guest_name: string
   room_number: string
@@ -246,17 +271,26 @@ export interface FinanceReport {
   transaction_count: number
   transactions_truncated: boolean
   updated_at: string
+  income_by_currency: Record<string, string>
+  expenses_by_currency: Record<string, string>
+  net_by_currency: Record<string, string>
 }
 
 export interface MonthlyReport {
   month: string
   total_income: string
+  total_income_by_currency: Record<string, string>
   total_expenses: string
+  total_expenses_by_currency: Record<string, string>
   net_income: string
+  net_income_by_currency: Record<string, string>
   total_guests: number
   average_daily_income: string
+  average_daily_income_by_currency: Record<string, string>
   total_credit: string
+  total_credit_by_currency: Record<string, string>
   total_penalties: string
+  total_penalties_by_currency: Record<string, string>
   occupancy_rate: number
   days?: DaySummary[]
 }
@@ -283,7 +317,9 @@ export interface DailyManifestItem {
   room_type?: string | null
   days_count: number
   amount_paid: string | number
+  amount_paid_by_currency: Record<string, string | number>
   expected_amount: string | number
+  currency: string
   check_in_date?: string | null
   checkout_date?: string | null
   status: string
@@ -298,6 +334,7 @@ export interface DailyManifestReport {
   occupied_count?: number
   reserved_count: number
   total_amount_paid: string | number
+  total_amount_paid_by_currency: Record<string, string | number>
   items: DailyManifestItem[]
 }
 

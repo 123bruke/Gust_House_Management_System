@@ -40,3 +40,5 @@ class FinancialSummary(BaseModel):
 	total_due: Decimal
 	total_paid: Decimal
 	balance: Decimal
+	currency: str
+	payments_by_currency: dict[str, Decimal]

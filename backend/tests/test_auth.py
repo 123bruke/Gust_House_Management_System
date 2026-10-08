@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
+from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
 from app.models.user import User, UserRole
 from app.services.user import create_user
@@ -64,6 +65,65 @@ async def test_successful_login(client: AsyncClient, users) -> None:
 
 
 @pytest.mark.asyncio
+async def test_shared_username_login_requires_the_selected_role(client: AsyncClient, users) -> None:
+	async with AsyncSessionLocal() as session:
+		await create_user(
+			session,
+			full_name="Reception User",
+			username="0908296773",
+			password="role-specific-reception-password",
+			role=UserRole.RECEPTION,
+		)
+
+	admin_response = await client.post(
+		"/api/v1/auth/login",
+		json={"username": "0908296773", "password": "admin-password-123", "role": "ADMIN"},
+	)
+	reception_response = await client.post(
+		"/api/v1/auth/login",
+		json={
+			"username": "0908296773",
+			"password": "role-specific-reception-password",
+			"role": "RECEPTION",
+		},
+	)
+	ambiguous_response = await client.post(
+		"/api/v1/auth/login",
+		json={"username": "0908296773", "password": "admin-password-123"},
+	)
+
+	assert admin_response.status_code == 200
+	assert admin_response.json()["user"]["role"] == "ADMIN"
+	assert reception_response.status_code == 200
+	assert reception_response.json()["user"]["role"] == "RECEPTION"
+	assert ambiguous_response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_seeded_admin_username_can_log_in(client: AsyncClient) -> None:
+	async with AsyncSessionLocal() as session:
+		session.add(
+			User(
+				full_name="Administrator",
+				username="admin",
+				password_hash=hash_password("admin-test-password"),
+				role=UserRole.ADMIN.value,
+				is_active=True,
+			)
+		)
+		await session.commit()
+
+	response = await client.post(
+		"/api/v1/auth/login",
+		json={"username": "admin", "password": "admin-test-password"},
+	)
+
+	assert response.status_code == 200
+	assert response.json()["user"]["username"] == "admin"
+	assert response.json()["user"]["role"] == "ADMIN"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("credentials", [{"username": "0999999999", "password": "password"}, {"username": "0908296773", "password": "wrong-password"}])
 async def test_invalid_login(client: AsyncClient, users, credentials) -> None:
 	response = await client.post("/api/v1/auth/login", json=credentials)
@@ -98,13 +158,22 @@ async def test_user_can_change_own_password(client: AsyncClient, users) -> None:
 	response = await client.post(
 		"/api/v1/auth/change-password",
 		headers=headers,
-		json={"current_password": "reception-password-123", "new_password": "new-reception-password-123"},
+		json={"new_password": "new-reception-password-123"},
 	)
 	assert response.status_code == 200
 	assert (await client.post(
 		"/api/v1/auth/login",
 		json={"username": "0911222333", "password": "new-reception-password-123"},
 	)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_changing_password_requires_a_signed_in_user(client: AsyncClient, users) -> None:
+	response = await client.post(
+		"/api/v1/auth/change-password",
+		json={"new_password": "new-password-123"},
+	)
+	assert response.status_code == 401
 
 
 @pytest.mark.asyncio

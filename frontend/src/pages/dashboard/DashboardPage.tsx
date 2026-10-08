@@ -19,14 +19,15 @@ import { CheckOutModal } from '../../components/modals/CheckOutModal'
 import { VoidCheckInModal } from '../../components/modals/VoidCheckInModal'
 import { ExtendStayModal } from '../../components/modals/ExtendStayModal'
 import { DailyManifestModal } from '../../components/modals/DailyManifestModal'
+import { Modal } from '../../components/common/Modal'
 import { LogbookSheet } from '../../components/logbook/LogbookSheet'
-import { getDailyReport } from '../../api/reports'
+import { getDailyReport, getFinanceReport } from '../../api/reports'
 import { getRooms } from '../../api/rooms'
 import { getStays } from '../../api/stays'
 import { getReservations } from '../../api/reservations'
 import { getGuests } from '../../api/guests'
 import { getCleaningRooms, setRoomCleaning } from '../../utils/roomCleaning'
-import type { DailyReport, Room, Stay, Reservation, Guest } from '../../types/api'
+import type { DailyReport, FinanceReport, Room, Stay, Reservation, Guest } from '../../types/api'
 
 interface StayWithGuest extends Stay {
   guest?: Guest
@@ -37,9 +38,29 @@ interface StayWithGuest extends Stay {
   extension_nights?: number
 }
 
+const paymentSourceLabels: Record<string, string> = {
+  CASH: 'pm.cash',
+  TELEBIRR: 'pm.telebirr',
+  CBE_BIRR: 'pm.cbeBirr',
+  BANK_TRANSFER: 'pm.bankTransfer',
+  CREDIT: 'pm.credit',
+  OTHER: 'pm.other',
+}
+
+function addisAbabaDate(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Addis_Ababa',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? ''
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
 export function DashboardPage() {
   const { user } = useAuth()
-  const { t, formatMoney } = useI18n()
+  const { t, formatMoney, formatDate } = useI18n()
   const isAdmin = user?.role === 'ADMIN'
   const canCheckInOut = user?.role === 'RECEPTION'
 
@@ -50,6 +71,10 @@ export function DashboardPage() {
   const [recentStays, setRecentStays] = useState<StayWithGuest[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
+  const [incomeDetailsOpen, setIncomeDetailsOpen] = useState(false)
+  const [incomeDetailsLoading, setIncomeDetailsLoading] = useState(false)
+  const [incomeDetailsError, setIncomeDetailsError] = useState('')
+  const [incomeDetails, setIncomeDetails] = useState<FinanceReport | null>(null)
   const [checkingInRoomId, setCheckingInRoomId] = useState<number | null>(null)
 
   // Modals
@@ -122,6 +147,23 @@ export function DashboardPage() {
     fetchDashboardData()
   }, [fetchDashboardData])
 
+  async function openIncomeDetails() {
+    setIncomeDetailsOpen(true)
+    setIncomeDetailsLoading(true)
+    setIncomeDetailsError('')
+    try {
+      setIncomeDetails(await getFinanceReport({
+        period: 'daily',
+        target_date: addisAbabaDate(),
+      }))
+    } catch (error) {
+      console.error('Failed to load income details:', error)
+      setIncomeDetailsError(t('dash.incomeDetailsError'))
+    } finally {
+      setIncomeDetailsLoading(false)
+    }
+  }
+
   const availableRooms = rooms.filter((r) => r.status === 'AVAILABLE')
   const occupiedRooms = rooms.filter((r) => r.status === 'OCCUPIED')
 
@@ -149,18 +191,25 @@ export function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
-            <KpiCard
-              loading={loading}
-              label={t('dash.todayIncome')}
-              value={
-                dailyReport
-                  ? formatMoney(Number(dailyReport.todays_income))
-                  : formatMoney(0)
-              }
-              detail={t('dash.guestSettlements')}
-              icon={CircleDollarSign}
-              tone="success"
-            />
+            <button
+              type="button"
+              onClick={() => void openIncomeDetails()}
+              aria-label={t('dash.incomeDetailsTitle')}
+              className="w-full rounded-2xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+            >
+              <KpiCard
+                loading={loading}
+                label={t('dash.todayIncome')}
+                value={
+                  dailyReport
+                    ? formatMoney(Number(dailyReport.todays_income))
+                    : formatMoney(0)
+                }
+                detail={t('dash.guestSettlements')}
+                icon={CircleDollarSign}
+                tone="success"
+              />
+            </button>
             <KpiCard
               loading={loading}
               label={t('dash.todayExpenses')}
@@ -173,6 +222,7 @@ export function DashboardPage() {
               icon={Wallet}
               tone="neutral"
             />
+
             <KpiCard
               loading={loading}
               label={t('dash.netIncome')}
@@ -223,7 +273,7 @@ export function DashboardPage() {
       )}
 
       {/* Quick Shift Audit & Daily Manifest Bar */}
-      <div className="bg-white rounded-xl border border-neutral-300 p-3.5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-[var(--surface)] rounded-xl border border-[var(--line)] p-3.5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
             <Printer size={18} />
@@ -233,9 +283,6 @@ export function DashboardPage() {
               <h2 className="text-sm font-bold text-neutral-900">
                 {t('dash.activityManifest')}
               </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                {t('dash.liveAudit')}
-              </span>
             </div>
             <p className="text-xs text-neutral-500 mt-0.5">
               {t('dash.manifestSub')}
@@ -388,6 +435,86 @@ export function DashboardPage() {
         isOpen={dailyManifestOpen}
         onClose={() => setDailyManifestOpen(false)}
       />
+
+      <Modal
+        isOpen={incomeDetailsOpen}
+        onClose={() => setIncomeDetailsOpen(false)}
+        title={t('dash.incomeDetailsTitle')}
+        description={t('dash.incomeDetailsIntro')}
+        size="4xl"
+        footer={
+          <button
+            type="button"
+            onClick={() => setIncomeDetailsOpen(false)}
+            className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--surface-2)]"
+          >
+            {t('common.close')}
+          </button>
+        }
+      >
+        {incomeDetailsLoading ? (
+          <p className="py-8 text-center text-sm text-[var(--ink-muted)]">{t('fin.loadingReport')}</p>
+        ) : incomeDetailsError ? (
+          <p role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+            {incomeDetailsError}
+          </p>
+        ) : incomeDetails ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+              {Object.entries(incomeDetails.income_by_currency).map(([code, amount]) => (
+                <p key={code} className="font-semibold text-[var(--ink)]">
+                  {code}: {Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              ))}
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-[var(--line)]">
+              <table className="w-full min-w-[680px] text-left text-sm">
+                <thead className="bg-[var(--surface-2)] text-xs uppercase text-[var(--ink-muted)]">
+                  <tr>
+                    <th className="px-3 py-2.5">{t('fin.timeEthiopia')}</th>
+                    <th className="px-3 py-2.5">{t('fin.guestRoom')}</th>
+                    <th className="px-3 py-2.5">{t('fin.incomeSource')}</th>
+                    <th className="px-3 py-2.5">{t('common.reference')}</th>
+                    <th className="px-3 py-2.5 text-right">{t('common.amount')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--line-faint)]">
+                  {incomeDetails.transactions.map((transaction) => (
+                    <tr key={transaction.id} className="text-[var(--ink)]">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-[var(--ink-muted)]">
+                        {formatDate(transaction.occurred_at, 'datetime')}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="block font-semibold">{transaction.guest_name}</span>
+                        <span className="text-xs text-[var(--ink-muted)]">{t('common.room')} {transaction.room_number}</span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {paymentSourceLabels[transaction.source]
+                          ? t(paymentSourceLabels[transaction.source])
+                          : transaction.source}
+                      </td>
+                      <td className="px-3 py-2.5 text-[var(--ink-muted)]">{transaction.reference || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold">
+                        {transaction.currency} {Number(transaction.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                  {incomeDetails.transactions.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-8 text-center text-[var(--ink-muted)]">
+                        {t('dash.incomeNoTransactions')}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {incomeDetails.transactions_truncated && (
+              <p className="text-xs text-[var(--ink-muted)]">{t('dash.incomeTransactionsLimited')}</p>
+            )}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

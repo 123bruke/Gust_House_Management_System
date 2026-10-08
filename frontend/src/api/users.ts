@@ -41,9 +41,8 @@ export async function deactivateUser(userId: number): Promise<User> {
   return data
 }
 
-export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<User> {
+export async function changeOwnPassword(newPassword: string): Promise<User> {
   const { data } = await api.post<User>('/auth/change-password', {
-    current_password: currentPassword,
     new_password: newPassword,
   })
   return data

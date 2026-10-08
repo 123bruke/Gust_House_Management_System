@@ -8,7 +8,6 @@ import {
   Clock,
   Search,
   RefreshCw,
-  Sparkles,
   CreditCard,
   Building,
   Phone,
@@ -29,13 +28,27 @@ interface DailyManifestModalProps {
 }
 
 type FilterActivity = 'ALL' | 'CHECKED_IN' | 'CHECKED_OUT' | 'OCCUPIED' | 'RESERVED'
+type CurrencyAmounts = Record<string, string | number>
+
+function sumByCurrency(items: DailyManifestItem[], field: 'paid' | 'expected'): Record<string, number> {
+  return items.reduce<Record<string, number>>((totals, item) => {
+    if (field === 'expected') {
+      totals[item.currency] = (totals[item.currency] ?? 0) + Number(item.expected_amount || 0)
+    } else {
+      for (const [currencyCode, amount] of Object.entries(item.amount_paid_by_currency ?? {})) {
+        totals[currencyCode] = (totals[currencyCode] ?? 0) + Number(amount || 0)
+      }
+    }
+    return totals
+  }, {})
+}
 
 export function DailyManifestModal({
   isOpen,
   onClose,
   initialDate,
 }: DailyManifestModalProps) {
-  const { t, formatDate, formatMoney, currency, lang } = useI18n()
+  const { t, formatDate, formatMoney, lang } = useI18n()
   const { user } = useAuth()
   const isReception = user?.role === 'RECEPTION'
   const [manifestType, setManifestType] = useState<'STANDARD' | 'FINANCIAL'>('STANDARD')
@@ -91,9 +104,17 @@ export function DailyManifestModal({
     })
   }, [report, activityFilter, searchQuery])
 
-  const formatCurrency = (val: string | number) => {
+  const formatCurrency = (val: string | number, currencyCode = report?.items[0]?.currency ?? 'ETB') => {
     const num = typeof val === 'string' ? parseFloat(val) : val
-    return formatMoney(num || 0)
+    if (currencyCode === 'ETB') return formatMoney(num || 0)
+    return `${currencyCode} ${(num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  const formatCurrencyTotals = (amounts: CurrencyAmounts) => {
+    const entries = Object.entries(amounts).filter(([, amount]) => Number(amount) !== 0)
+    return entries.length
+      ? entries.map(([code, amount]) => formatCurrency(amount, code)).join(' · ')
+      : formatCurrency(0)
   }
 
   const formatDateTime = (dtStr?: string | null) => {
@@ -116,14 +137,8 @@ export function DailyManifestModal({
 
   const handlePrint = () => {
     const isStandard = effectiveType === 'STANDARD'
-    const totalExpected = filteredItems.reduce(
-      (sum, item) => sum + (parseFloat(String(item.expected_amount)) || 0),
-      0
-    )
-    const totalPaid = filteredItems.reduce(
-      (sum, item) => sum + (parseFloat(String(item.amount_paid)) || 0),
-      0
-    )
+    const totalExpected = sumByCurrency(filteredItems, 'expected')
+    const totalPaid = sumByCurrency(filteredItems, 'paid')
 
     const iframe = document.createElement('iframe')
     iframe.style.position = 'fixed'
@@ -233,10 +248,10 @@ export function DailyManifestModal({
               </div>
             </td>
             <td style="padding: 8px 10px; font-size: 11px; text-align: right; vertical-align: top; font-weight: 700; font-family: monospace; color: ${paidNum > 0 ? '#065f46' : '#9ca3af'};">
-              ${formatCurrency(item.amount_paid)}
+              ${formatCurrencyTotals(item.amount_paid_by_currency)}
             </td>
             <td style="padding: 8px 10px; font-size: 11px; text-align: right; vertical-align: top; font-weight: 700; font-family: monospace; color: #111827;">
-              ${formatCurrency(item.expected_amount)}
+              ${formatCurrency(item.expected_amount, item.currency)}
             </td>
             <td style="padding: 8px 10px; font-size: 10px; vertical-align: top; color: #4b5563;">
               <div style="font-weight: 600; text-transform: uppercase;">${item.status}</div>
@@ -353,7 +368,7 @@ export function DailyManifestModal({
               </div>
               <div style="padding: 6px 4px; border: 1px solid #fecdd3; border-radius: 6px; background: #fff1f2;">
                 <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #9f1239;">${t('manifest.totalCollected')}</div>
-                <div style="font-size: 12px; font-weight: 900; color: #9f1239; margin-top: 2px;">${formatCurrency(totalPaid)}</div>
+                <div style="font-size: 12px; font-weight: 900; color: #9f1239; margin-top: 2px;">${formatCurrencyTotals(totalPaid)}</div>
               </div>
             </div>
             `
@@ -407,8 +422,8 @@ export function DailyManifestModal({
                     : `
                 <tr style="background: #f9fafb; border-top: 2px solid #111827; font-weight: 800; font-size: 11px;">
                   <td colspan="4" style="padding: 10px; text-align: right; text-transform: uppercase; letter-spacing: 0.5px;">${t('manifest.totalPage')}</td>
-                  <td style="padding: 10px; text-align: right; color: #065f46; font-size: 12px; font-family: monospace;">${formatCurrency(totalPaid)}</td>
-                  <td style="padding: 10px; text-align: right; color: #111827; font-size: 12px; font-family: monospace;">${formatCurrency(totalExpected)}</td>
+                  <td style="padding: 10px; text-align: right; color: #065f46; font-size: 12px; font-family: monospace;">${formatCurrencyTotals(totalPaid)}</td>
+                  <td style="padding: 10px; text-align: right; color: #111827; font-size: 12px; font-family: monospace;">${formatCurrencyTotals(totalExpected)}</td>
                   <td></td>
                 </tr>
                 `
@@ -496,8 +511,8 @@ export function DailyManifestModal({
           t('common.room'),
           t('manifest.roomType'),
           t('manifest.daysCount'),
-          t('manifest.amountPaidEtb', { currency }),
-          t('manifest.totalExpectedEtb', { currency }),
+          t('manifest.amountPaid'),
+          t('manifest.totalExpected'),
           t('manifest.checkInDate'),
           t('manifest.checkOutDate'),
           t('common.status'),
@@ -527,8 +542,8 @@ export function DailyManifestModal({
             `"${item.room_number}"`,
             `"${item.room_type || ''}"`,
             item.days_count,
-            item.amount_paid,
-            item.expected_amount,
+            `"${formatCurrencyTotals(item.amount_paid_by_currency).replace(/"/g, '""')}"`,
+            `"${formatCurrency(item.expected_amount, item.currency).replace(/"/g, '""')}"`,
             `"${item.check_in_date || ''}"`,
             `"${item.checkout_date || ''}"`,
             `"${item.status}"`,
@@ -757,16 +772,16 @@ export function DailyManifestModal({
                 </div>
                 <div className="p-2 border border-stone-300 rounded bg-stone-50">
                   <p className="text-[10px] uppercase font-bold text-rose-700">{t('manifest.totalCollected')}</p>
-                  <p className="text-sm font-bold text-stone-900">{formatCurrency(report?.total_amount_paid || 0)}</p>
+                  <p className="text-sm font-bold text-stone-900">{formatCurrencyTotals(report?.total_amount_paid_by_currency ?? {})}</p>
                 </div>
               </div>
             )}
           </div>
 
           {/* SCREEN CONTROLS & DATE SELECTOR */}
-          <div className="no-print flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200/80">
+          <div className="no-print flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-700">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-700">
                 <Calendar size={15} className="text-rose-600" />
                 {t('manifest.targetDate')}
               </div>
@@ -774,7 +789,7 @@ export function DailyManifestModal({
                 type="date"
                 value={targetDate}
                 onChange={(e) => setTargetDate(e.target.value)}
-                className="text-xs font-medium bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500 text-stone-800 shadow-xs"
+                className="text-xs font-medium bg-[var(--surface)] border border-[var(--line)] rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500 text-[var(--ink)] shadow-xs"
               />
               <button
                 onClick={() => setTargetDate(new Date().toISOString().slice(0, 10))}
@@ -785,20 +800,20 @@ export function DailyManifestModal({
               <button
                 onClick={() => fetchManifest(targetDate)}
                 title={t('manifest.refresh')}
-                className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-white rounded-lg transition-colors"
+                className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
               >
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
               </button>
 
               {!isReception ? (
-                <div className="flex items-center bg-stone-200/80 p-0.5 rounded-lg text-xs font-semibold ml-2">
+                <div className="flex items-center bg-neutral-200 p-0.5 rounded-lg text-xs font-semibold ml-2">
                   <button
                     type="button"
                     onClick={() => setManifestType('STANDARD')}
                     className={`px-2.5 py-1 rounded-md transition ${
                       manifestType === 'STANDARD'
-                        ? 'bg-white text-stone-900 shadow-xs font-bold'
-                        : 'text-stone-600 hover:text-stone-900'
+                        ? 'bg-[var(--surface)] text-[var(--ink)] shadow-xs font-bold'
+                        : 'text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
                     {t('manifest.tabStandard')}
@@ -808,8 +823,8 @@ export function DailyManifestModal({
                     onClick={() => setManifestType('FINANCIAL')}
                     className={`px-2.5 py-1 rounded-md transition ${
                       manifestType === 'FINANCIAL'
-                        ? 'bg-white text-stone-900 shadow-xs font-bold'
-                        : 'text-stone-600 hover:text-stone-900'
+                        ? 'bg-[var(--surface)] text-[var(--ink)] shadow-xs font-bold'
+                        : 'text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
                     {t('manifest.tabFinancial')}
@@ -820,19 +835,19 @@ export function DailyManifestModal({
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <div className="relative flex-1 sm:w-64">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"
                   placeholder={t('manifest.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 text-stone-800 shadow-xs"
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-[var(--surface)] border border-[var(--line)] rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 text-[var(--ink)] shadow-xs"
                 />
               </div>
               <Button
                 size="sm"
                 onClick={handlePrint}
-                className="gap-1.5 bg-stone-900 hover:bg-stone-800 text-white font-medium text-xs px-3 py-1.5 shadow-xs"
+                className="gap-1.5 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 font-medium text-xs px-3 py-1.5 shadow-xs"
               >
                 <Printer size={14} />
                 {t('common.print')}
@@ -841,71 +856,71 @@ export function DailyManifestModal({
           </div>
 
           {/* SCREEN KPI SUMMARY CARDS */}
-          <div className="no-print grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col justify-between">
+          <div className="no-print grid grid-cols-1 min-[380px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+            <div className="min-h-32 min-w-0 p-4 sm:p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">{t('manifest.checkedIn')}</span>
+                <span className="min-w-0 pr-2 text-[11px] font-bold leading-snug text-emerald-800 uppercase tracking-wide sm:tracking-wider">{t('manifest.checkedIn')}</span>
                 <span className="p-1 rounded-md bg-emerald-100 text-emerald-700">
                   <CheckCircle2 size={15} />
                 </span>
               </div>
               <div className="mt-2">
                 <p className="text-2xl font-bold text-emerald-950">{report?.checked_in_count || 0}</p>
-                <p className="text-[10px] text-emerald-700 font-medium mt-0.5">{t('manifest.descCheckedIn')}</p>
+                <p className="text-[11px] leading-snug text-emerald-700 font-medium mt-1">{t('manifest.descCheckedIn')}</p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 flex flex-col justify-between">
+            <div className="min-h-32 min-w-0 p-4 sm:p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">{t('manifest.checkedOut')}</span>
+                <span className="min-w-0 pr-2 text-[11px] font-bold leading-snug text-blue-800 uppercase tracking-wide sm:tracking-wider">{t('manifest.checkedOut')}</span>
                 <span className="p-1 rounded-md bg-blue-100 text-blue-700">
                   <LogOut size={15} />
                 </span>
               </div>
               <div className="mt-2">
                 <p className="text-2xl font-bold text-blue-950">{report?.checked_out_count || 0}</p>
-                <p className="text-[10px] text-blue-700 font-medium mt-0.5">{t('manifest.descCheckedOut')}</p>
+                <p className="text-[11px] leading-snug text-blue-700 font-medium mt-1">{t('manifest.descCheckedOut')}</p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/50 flex flex-col justify-between">
+            <div className="min-h-32 min-w-0 p-4 sm:p-3.5 rounded-xl border border-purple-200 bg-purple-50/50 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-purple-800 uppercase tracking-wider">{t('manifest.kpiInHouseGuests')}</span>
+                <span className="min-w-0 pr-2 text-[11px] font-bold leading-snug text-purple-800 uppercase tracking-wide sm:tracking-wider">{t('manifest.kpiInHouseGuests')}</span>
                 <span className="p-1 rounded-md bg-purple-100 text-purple-700">
                   <BedDouble size={15} />
                 </span>
               </div>
               <div className="mt-2">
                 <p className="text-2xl font-bold text-purple-950">{report?.occupied_count || 0}</p>
-                <p className="text-[10px] text-purple-700 font-medium mt-0.5">{t('manifest.descOccupied')}</p>
+                <p className="text-[11px] leading-snug text-purple-700 font-medium mt-1">{t('manifest.descOccupied')}</p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/50 flex flex-col justify-between">
+            <div className="min-h-32 min-w-0 p-4 sm:p-3.5 rounded-xl border border-amber-200 bg-amber-50/50 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">{t('manifest.reserved')}</span>
+                <span className="min-w-0 pr-2 text-[11px] font-bold leading-snug text-amber-800 uppercase tracking-wide sm:tracking-wider">{t('manifest.reserved')}</span>
                 <span className="p-1 rounded-md bg-amber-100 text-amber-700">
                   <Clock size={15} />
                 </span>
               </div>
               <div className="mt-2">
                 <p className="text-2xl font-bold text-amber-950">{report?.reserved_count || 0}</p>
-                <p className="text-[10px] text-amber-700 font-medium mt-0.5">{t('manifest.descReserved')}</p>
+                <p className="text-[11px] leading-snug text-amber-700 font-medium mt-1">{t('manifest.descReserved')}</p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex flex-col justify-between col-span-2 sm:col-span-1">
+            <div className="min-h-32 min-w-0 p-4 sm:p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex flex-col justify-between col-span-1 min-[380px]:col-span-2 sm:col-span-1">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">{t('manifest.totalCollected')}</span>
+                <span className="min-w-0 pr-2 text-[11px] font-bold leading-snug text-rose-800 uppercase tracking-wide sm:tracking-wider">{t('manifest.totalCollected')}</span>
                 <span className="p-1 rounded-md bg-rose-100 text-rose-700">
                   <CreditCard size={15} />
                 </span>
               </div>
               <div className="mt-2">
                 <p className="text-lg sm:text-xl font-extrabold text-rose-950 truncate">
-                  {formatCurrency(report?.total_amount_paid || 0)}
+                  {formatCurrencyTotals(report?.total_amount_paid_by_currency ?? {})}
                 </p>
-                <p className="text-[10px] text-rose-700 font-medium mt-0.5">{t('manifest.descCollected', { date: targetDate })}</p>
+                <p className="text-[11px] leading-snug text-rose-700 font-medium mt-1">{t('manifest.descCollected', { date: targetDate })}</p>
               </div>
             </div>
           </div>
@@ -1089,7 +1104,7 @@ export function DailyManifestModal({
                         {/* Stay Duration */}
                         <td className="py-2.5 px-3 align-top">
                           <div className="flex items-center gap-1 font-semibold text-stone-900">
-                            <Sparkles size={11} className="text-amber-500" />
+                            <Clock size={11} className="text-stone-400" />
                             {item.days_count} {item.days_count === 1 ? t('manifest.dayNightUnit') : t('manifest.daysNightsUnit')}
                           </div>
                           <p className="text-[10px] text-stone-500 mt-0.5">
@@ -1108,12 +1123,12 @@ export function DailyManifestModal({
                                     : 'text-stone-400 font-mono text-[11px]'
                                 }`}
                               >
-                                {formatCurrency(item.amount_paid)}
+                                {formatCurrencyTotals(item.amount_paid_by_currency)}
                               </span>
                             </td>
                             <td className="py-2.5 px-3 align-top text-right">
                               <span className="font-semibold text-stone-700 font-mono text-[11px]">
-                                {formatCurrency(item.expected_amount)}
+                                {formatCurrency(item.expected_amount, item.currency)}
                               </span>
                             </td>
                           </>
@@ -1146,14 +1161,10 @@ export function DailyManifestModal({
                     {showFinancials ? (
                       <>
                         <td className="py-2.5 px-3 text-right text-emerald-800 font-mono text-sm">
-                          {formatCurrency(
-                            filteredItems.reduce((acc, curr) => acc + parseFloat(String(curr.amount_paid || 0)), 0)
-                          )}
+                          {formatCurrencyTotals(sumByCurrency(filteredItems, 'paid'))}
                         </td>
                         <td className="py-2.5 px-3 text-right text-stone-800 font-mono text-sm">
-                          {formatCurrency(
-                            filteredItems.reduce((acc, curr) => acc + parseFloat(String(curr.expected_amount || 0)), 0)
-                          )}
+                          {formatCurrencyTotals(sumByCurrency(filteredItems, 'expected'))}
                         </td>
                         <td></td>
                       </>

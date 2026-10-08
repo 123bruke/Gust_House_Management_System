@@ -43,7 +43,7 @@ type StatementMetric =
 
 export function ReportsPage() {
   const { user } = useAuth()
-  const { t, formatDate, formatMoney, currency } = useI18n()
+  const { t, formatDate, formatMoney, formatNumber } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialPropId = searchParams.get('property_id') ? Number(searchParams.get('property_id')) : null
 
@@ -65,6 +65,15 @@ export function ReportsPage() {
   const [expenseData, setExpenseData] = useState<ExpenseAnalysisReport | null>(null)
   const [weeklyData, setWeeklyData] = useState<WeeklyReport | null>(null)
   const [monthlyData, setMonthlyData] = useState<MonthlyReport | null>(null)
+
+  const formatCurrencyTotals = (amounts: Record<string, string | number>) => {
+    const entries = Object.entries(amounts)
+    return entries.length
+      ? entries.map(([code, amount]) => `${formatNumber(amount)} ${code}`).join(' · ')
+      : formatMoney(0)
+  }
+  const hasNegativeCurrencyAmount = (amounts: Record<string, string | number>) =>
+    Object.values(amounts).some((amount) => Number(amount) < 0)
 
   // Load properties list if user is SUPER_ADMIN
   useEffect(() => {
@@ -241,21 +250,21 @@ export function ReportsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <KpiCard
                   title={t('reports.netCashflow')}
-                  value={formatMoney(Number(dailyData.net_income))}
+                  value={formatCurrencyTotals(dailyData.net_income_by_currency)}
                   subtitle={t('reports.netCashflowSub')}
                   icon={<Wallet size={20} />}
-                  tone={Number(dailyData.net_income) >= 0 ? 'success' : 'danger'}
+                  tone={hasNegativeCurrencyAmount(dailyData.net_income_by_currency) ? 'danger' : 'success'}
                 />
                 <KpiCard
                   title={t('reports.dailyRevenue')}
-                  value={formatMoney(Number(dailyData.todays_income))}
+                  value={formatCurrencyTotals(dailyData.todays_income_by_currency)}
                   subtitle={t('reports.guestSettlementsCollected')}
                   icon={<TrendingUp size={20} />}
                   tone="success"
                 />
                 <KpiCard
                   title={t('reports.dailyExpenses')}
-                  value={formatMoney(Number(dailyData.todays_expenses))}
+                  value={formatCurrencyTotals(dailyData.todays_expenses_by_currency)}
                   subtitle={t('reports.operationalCostsToday')}
                   icon={<TrendingDown size={20} />}
                   tone="neutral"
@@ -306,12 +315,9 @@ export function ReportsPage() {
                     <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
                       {t('reports.lateCheckoutPenalties')}
                     </span>
-                    <span className="w-7 h-7 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-xs">
-                      {currency}
-                    </span>
                   </div>
                   <p className="text-xl font-bold text-rose-600 mt-2">
-                    {formatMoney(Number(dailyData.penalties_total))}
+                    {formatCurrencyTotals(dailyData.penalties_by_currency)}
                   </p>
                   <p className="text-xs text-neutral-500 mt-0.5">{t('reports.automatedPenalty')}</p>
                 </div>
@@ -330,7 +336,7 @@ export function ReportsPage() {
                 {t('reports.totalGrossCollections')}
               </p>
               <h2 className="text-3xl font-extrabold mt-1">
-                {formatMoney(Number(incomeData.total_income))}
+                {formatCurrencyTotals(incomeData.total_income_by_currency)}
               </h2>
             </div>
             <div className="text-right">
@@ -340,42 +346,26 @@ export function ReportsPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {incomeData.by_method.map((item) => {
-              const numAmt = Number(item.amount)
-              const total = Number(incomeData.total_income) || 1
-              const pct = Math.round((numAmt / total) * 100)
-
-              return (
-                <div
-                  key={item.method}
-                  className="p-5 rounded-2xl bg-white border border-neutral-200 shadow-xs flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-bold text-sm text-neutral-900">
-                        {paymentMethodKeys[item.method] ? t(paymentMethodKeys[item.method]) : item.method}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#FF385C]/10 text-[#FF385C]">
-                        {pct}%
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-bold text-neutral-900">
-                      {formatMoney(numAmt)}
-                    </h3>
-                    <p className="text-xs text-neutral-500 mt-1">
-                      {t('reports.successfulTransactions', { count: item.count })}
-                    </p>
+            {incomeData.by_method.map((item) => (
+              <div
+                key={item.method}
+                className="p-5 rounded-2xl bg-white border border-neutral-200 shadow-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold text-sm text-neutral-900">
+                      {paymentMethodKeys[item.method] ? t(paymentMethodKeys[item.method]) : item.method}
+                    </span>
                   </div>
-
-                  <div className="w-full bg-neutral-100 h-2 rounded-full overflow-hidden mt-4">
-                    <div
-                      className="bg-[#FF385C] h-full rounded-full"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
+                  <h3 className="text-xl font-bold text-neutral-900">
+                    {formatCurrencyTotals(item.amount_by_currency)}
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {t('reports.successfulTransactions', { count: item.count })}
+                  </p>
                 </div>
-              )
-            })}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -389,7 +379,7 @@ export function ReportsPage() {
                 {t('reports.totalOperationalExpenses')}
               </p>
               <h2 className="text-3xl font-extrabold text-neutral-900 mt-1">
-                {formatMoney(Number(expenseData.total_expenses))}
+                {formatCurrencyTotals(expenseData.total_expenses_by_currency)}
               </h2>
             </div>
             <div className="text-right">
@@ -402,25 +392,13 @@ export function ReportsPage() {
             {expenseData.by_category.map((item) => (
               <div
                 key={item.category}
-                className="p-5 rounded-2xl bg-white border border-neutral-200 shadow-xs flex flex-col justify-between"
+                className="p-5 rounded-2xl bg-white border border-neutral-200 shadow-xs"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-sm text-neutral-900">{item.category}</span>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-                      {item.percentage}%
-                    </span>
-                  </div>
+                  <span className="font-bold text-sm text-neutral-900">{item.category}</span>
                   <h3 className="text-xl font-bold text-neutral-900">
-                    {formatMoney(Number(item.amount))}
+                    {formatCurrencyTotals(item.amount_by_currency)}
                   </h3>
-                </div>
-
-                <div className="w-full bg-neutral-100 h-2 rounded-full overflow-hidden mt-4">
-                  <div
-                    className="bg-amber-500 h-full rounded-full"
-                    style={{ width: `${item.percentage}%` }}
-                  />
                 </div>
               </div>
             ))}
@@ -434,21 +412,21 @@ export function ReportsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <KpiCard
               title={t('reports.sevenDayNetCashflow')}
-              value={formatMoney(Number(weeklyData.net_income))}
+              value={formatCurrencyTotals(weeklyData.net_income_by_currency)}
               subtitle={t('reports.dateRange', { start: formatDate(weeklyData.start_date, 'short'), end: formatDate(weeklyData.end_date, 'short') })}
               icon={<Wallet size={20} />}
-              tone={Number(weeklyData.net_income) >= 0 ? 'success' : 'danger'}
+              tone={hasNegativeCurrencyAmount(weeklyData.net_income_by_currency) ? 'danger' : 'success'}
             />
             <KpiCard
               title={t('reports.sevenDayRevenue')}
-              value={formatMoney(Number(weeklyData.total_income))}
+              value={formatCurrencyTotals(weeklyData.total_income_by_currency)}
               subtitle={t('reports.grossIncomeCollected')}
               icon={<TrendingUp size={20} />}
               tone="success"
             />
             <KpiCard
               title={t('reports.sevenDayExpenses')}
-              value={formatMoney(Number(weeklyData.total_expense))}
+              value={formatCurrencyTotals(weeklyData.total_expense_by_currency)}
               subtitle={t('reports.operationalDisbursements')}
               icon={<TrendingDown size={20} />}
               tone="neutral"
@@ -474,13 +452,13 @@ export function ReportsPage() {
                         {d.day} ({d.date})
                       </td>
                       <td className="py-2.5 px-3 text-emerald-600">
-                        {formatMoney(Number(d.income))}
+                        {formatCurrencyTotals(d.income_by_currency)}
                       </td>
                       <td className="py-2.5 px-3 text-neutral-700">
-                        {formatMoney(Number(d.expense))}
+                        {formatCurrencyTotals(d.expense_by_currency)}
                       </td>
                       <td className="py-2.5 px-3 font-bold text-neutral-900">
-                        {formatMoney(Number(d.net))}
+                        {formatCurrencyTotals(d.net_by_currency)}
                       </td>
                     </tr>
                   ))}
@@ -568,12 +546,12 @@ export function ReportsPage() {
 
                 <div className="mt-2">
                   <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                    {statementMetric === 'GROSS_INCOME' && formatMoney(Number(monthlyData.total_income))}
-                    {statementMetric === 'DAILY_REVENUE' && t('reports.perDay', { amount: formatMoney(Number(monthlyData.average_daily_income)) })}
-                    {statementMetric === 'NET_INCOME' && formatMoney(Number(monthlyData.net_income))}
-                    {statementMetric === 'EXPENSE' && formatMoney(Number(monthlyData.total_expenses))}
-                    {statementMetric === 'NET_CASHFLOW' && formatMoney(Number(monthlyData.net_income))}
-                    {statementMetric === 'ALL' && t('reports.amountGross', { amount: formatMoney(Number(monthlyData.total_income)) })}
+                    {statementMetric === 'GROSS_INCOME' && formatCurrencyTotals(monthlyData.total_income_by_currency)}
+                    {statementMetric === 'DAILY_REVENUE' && t('reports.perDay', { amount: formatCurrencyTotals(monthlyData.average_daily_income_by_currency) })}
+                    {statementMetric === 'NET_INCOME' && formatCurrencyTotals(monthlyData.net_income_by_currency)}
+                    {statementMetric === 'EXPENSE' && formatCurrencyTotals(monthlyData.total_expenses_by_currency)}
+                    {statementMetric === 'NET_CASHFLOW' && formatCurrencyTotals(monthlyData.net_income_by_currency)}
+                    {statementMetric === 'ALL' && t('reports.amountGross', { amount: formatCurrencyTotals(monthlyData.total_income_by_currency) })}
                   </h2>
                   <p className="text-xs text-neutral-300 mt-1 max-w-2xl">
                     {statementMetric === 'GROSS_INCOME' &&
@@ -604,7 +582,7 @@ export function ReportsPage() {
                 <div className="text-neutral-300">
                   <span className="text-neutral-400">{t('reports.avgDaily')}: </span>
                   <span className="font-bold text-emerald-400">
-                    {formatMoney(Number(monthlyData.average_daily_income))}
+                    {formatCurrencyTotals(monthlyData.average_daily_income_by_currency)}
                   </span>
                 </div>
               </div>
@@ -620,7 +598,7 @@ export function ReportsPage() {
             >
               <KpiCard
                 title={t('reports.grossIncome')}
-                value={formatMoney(Number(monthlyData.total_income))}
+                value={formatCurrencyTotals(monthlyData.total_income_by_currency)}
                 subtitle={statementMetric === 'GROSS_INCOME' ? t('reports.activeFilterDefault') : t('reports.allRoomCharges')}
                 icon={<TrendingUp size={20} />}
                 tone="success"
@@ -634,7 +612,7 @@ export function ReportsPage() {
             >
               <KpiCard
                 title={t('reports.dailyRevenuePace')}
-                value={formatMoney(Number(monthlyData.average_daily_income))}
+                value={formatCurrencyTotals(monthlyData.average_daily_income_by_currency)}
                 subtitle={statementMetric === 'DAILY_REVENUE' ? t('reports.activeFilter') : t('reports.averageDailyIncome')}
                 icon={<CircleDollarSign size={20} />}
                 tone="accent"
@@ -648,7 +626,7 @@ export function ReportsPage() {
             >
               <KpiCard
                 title={t('reports.totalExpenses')}
-                value={formatMoney(Number(monthlyData.total_expenses))}
+                value={formatCurrencyTotals(monthlyData.total_expenses_by_currency)}
                 subtitle={statementMetric === 'EXPENSE' ? t('reports.activeFilter') : t('reports.operationsSuppliesMaintenance')}
                 icon={<TrendingDown size={20} />}
                 tone="neutral"
@@ -664,14 +642,14 @@ export function ReportsPage() {
             >
               <KpiCard
                 title={statementMetric === 'NET_CASHFLOW' ? t('reports.netCashflow') : t('dash.netIncome')}
-                value={formatMoney(Number(monthlyData.net_income))}
+                value={formatCurrencyTotals(monthlyData.net_income_by_currency)}
                 subtitle={
                   statementMetric === 'NET_INCOME' || statementMetric === 'NET_CASHFLOW'
                     ? t('reports.activeFilter')
                     : t('reports.grossMinusExpenses')
                 }
                 icon={<Wallet size={20} />}
-                tone={Number(monthlyData.net_income) >= 0 ? 'success' : 'danger'}
+                tone={hasNegativeCurrencyAmount(monthlyData.net_income_by_currency) ? 'danger' : 'success'}
               />
             </div>
           </div>
@@ -693,7 +671,7 @@ export function ReportsPage() {
                 {t('reports.outstandingBalances')}
               </span>
               <p className="text-2xl font-bold text-amber-600 mt-1">
-                {formatMoney(Number(monthlyData.total_credit))}
+                {formatCurrencyTotals(monthlyData.total_credit_by_currency)}
               </p>
               <p className="text-xs text-neutral-500 mt-0.5">{t('reports.unsettledFolioCredit')}</p>
             </div>
@@ -703,7 +681,7 @@ export function ReportsPage() {
                 {t('reports.penaltiesLevied')}
               </span>
               <p className="text-2xl font-bold text-rose-600 mt-1">
-                {formatMoney(Number(monthlyData.total_penalties))}
+                {formatCurrencyTotals(monthlyData.total_penalties_by_currency)}
               </p>
               <p className="text-xs text-neutral-500 mt-0.5">{t('reports.automatedPenaltyFees')}</p>
             </div>
@@ -799,7 +777,7 @@ export function ReportsPage() {
                               : 'text-emerald-600'
                           }`}
                         >
-                          {formatMoney(Number(d.income))}
+                          {formatCurrencyTotals(d.income_by_currency)}
                         </td>
                         <td
                           className={`py-2.5 px-3 ${
@@ -808,7 +786,7 @@ export function ReportsPage() {
                               : 'text-neutral-700'
                           }`}
                         >
-                          {formatMoney(Number(d.income))}
+                          {formatCurrencyTotals(d.income_by_currency)}
                         </td>
                         <td
                           className={`py-2.5 px-3 ${
@@ -817,29 +795,29 @@ export function ReportsPage() {
                               : 'text-rose-600'
                           }`}
                         >
-                          {formatMoney(Number(d.expense))}
+                          {formatCurrencyTotals(d.expense_by_currency)}
                         </td>
                         <td
                           className={`py-2.5 px-3 font-bold ${
                             statementMetric === 'NET_INCOME'
                               ? 'bg-rose-50/50 text-[#FF385C]'
-                              : Number(d.net) >= 0
+                              : !hasNegativeCurrencyAmount(d.net_by_currency)
                               ? 'text-emerald-600'
                               : 'text-rose-600'
                           }`}
                         >
-                          {formatMoney(Number(d.net))}
+                          {formatCurrencyTotals(d.net_by_currency)}
                         </td>
                         <td
                           className={`py-2.5 px-3 font-bold ${
                             statementMetric === 'NET_CASHFLOW'
                               ? 'bg-rose-50/50 text-[#FF385C]'
-                              : Number(d.net) >= 0
+                              : !hasNegativeCurrencyAmount(d.net_by_currency)
                               ? 'text-neutral-900'
                               : 'text-rose-600'
                           }`}
                         >
-                          {formatMoney(Number(d.net))}
+                          {formatCurrencyTotals(d.net_by_currency)}
                         </td>
                       </tr>
                     ))
@@ -859,39 +837,39 @@ export function ReportsPage() {
                         statementMetric === 'GROSS_INCOME' ? 'text-[#FF385C]' : 'text-emerald-600'
                       }`}
                     >
-                      {formatMoney(Number(monthlyData.total_income))}
+                      {formatCurrencyTotals(monthlyData.total_income_by_currency)}
                     </td>
                     <td
                       className={`py-3 px-3 ${
                         statementMetric === 'DAILY_REVENUE' ? 'text-[#FF385C]' : 'text-neutral-800'
                       }`}
                     >
-                      {t('reports.avgAmountPerDay', { amount: formatMoney(Number(monthlyData.average_daily_income)) })}
+                      {t('reports.avgAmountPerDay', { amount: formatCurrencyTotals(monthlyData.average_daily_income_by_currency) })}
                     </td>
                     <td
                       className={`py-3 px-3 ${
                         statementMetric === 'EXPENSE' ? 'text-[#FF385C]' : 'text-rose-600'
                       }`}
                     >
-                      {formatMoney(Number(monthlyData.total_expenses))}
+                      {formatCurrencyTotals(monthlyData.total_expenses_by_currency)}
                     </td>
                     <td
                       className={`py-3 px-3 ${
                         statementMetric === 'NET_INCOME'
                           ? 'text-[#FF385C]'
-                          : Number(monthlyData.net_income) >= 0
+                          : !hasNegativeCurrencyAmount(monthlyData.net_income_by_currency)
                           ? 'text-emerald-600'
                           : 'text-rose-600'
                       }`}
                     >
-                      {formatMoney(Number(monthlyData.net_income))}
+                      {formatCurrencyTotals(monthlyData.net_income_by_currency)}
                     </td>
                     <td
                       className={`py-3 px-3 ${
                         statementMetric === 'NET_CASHFLOW' ? 'text-[#FF385C]' : 'text-neutral-900'
                       }`}
                     >
-                      {formatMoney(Number(monthlyData.net_income))}
+                      {formatCurrencyTotals(monthlyData.net_income_by_currency)}
                     </td>
                   </tr>
                 </tfoot>

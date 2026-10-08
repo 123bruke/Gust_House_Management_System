@@ -33,7 +33,9 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, session: AsyncSession = Depends(get_db)) -> TokenResponse:
     try:
-        user = await authenticate_user(session, payload.username, payload.password)
+        user = await authenticate_user(
+            session, payload.username, payload.password, payload.role
+        )
     except AuthenticationError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -54,15 +56,7 @@ async def change_password_endpoint(
     current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> UserRead:
-    try:
-        user = await change_password(
-            session,
-            current_user,
-            current_password=payload.current_password,
-            new_password=payload.new_password,
-        )
-    except InvalidCurrentPasswordError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    user = await change_password(session, current_user, new_password=payload.new_password)
     return UserRead.model_validate(user)
 
 
@@ -77,6 +71,7 @@ async def public_change_password_endpoint(
             username=payload.username,
             current_password=payload.current_password,
             new_password=payload.new_password,
+            role=payload.role,
         )
     except InvalidCurrentPasswordError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -98,6 +93,7 @@ async def admin_override_reset_endpoint(
             new_password=payload.new_password,
             admin_username=payload.admin_username,
             admin_password=payload.admin_password,
+            target_role=payload.target_role,
         )
     except UnauthorizedAdminError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

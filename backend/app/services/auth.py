@@ -14,11 +14,19 @@ def normalize_phone_number(value: str) -> str:
 
 
 async def authenticate_user(
-	session: AsyncSession, username: str, password: str
+	session: AsyncSession,
+	username: str,
+	password: str,
+	role: UserRole | None = None,
 ) -> User:
-	identifier = normalize_phone_number(username)
+	trimmed_username = username.strip()
+	identifier = (
+		normalize_phone_number(trimmed_username)
+		if trimmed_username.lstrip("+").isdigit()
+		else trimmed_username
+	)
 	repo = UserRepository(session)
-	user = await repo.get_by_username(identifier)
+	user = await repo.get_by_username(identifier, role)
 	if user is None or not verify_password(password, user.password_hash):
 		raise AuthenticationError("Invalid username or password")
 	if not user.is_active:

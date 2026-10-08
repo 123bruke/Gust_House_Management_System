@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 class UserRepository:
@@ -11,12 +11,18 @@ class UserRepository:
 	async def get_by_id(self, user_id: int) -> User | None:
 		return await self.session.get(User, user_id)
 
-	async def get_by_username(self, username: str) -> User | None:
+	async def get_by_username(
+		self, username: str, role: UserRole | str | None = None
+	) -> User | None:
 		from sqlalchemy import func
-		result = await self.session.execute(
-			select(User).where(func.lower(User.username) == username.strip().lower())
+		query = select(User).where(
+			func.lower(User.username) == username.strip().lower()
 		)
-		return result.scalar_one_or_none()
+		if role is not None:
+			query = query.where(User.role == (role.value if isinstance(role, UserRole) else role))
+		result = await self.session.execute(query)
+		users = result.scalars().all()
+		return users[0] if len(users) == 1 else None
 
 	async def get_by_email(self, email: str) -> User | None:
 		from sqlalchemy import func

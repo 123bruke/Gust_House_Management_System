@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import {
   AlertCircle,
   Receipt,
-  Sparkles,
   Smartphone,
   Building2,
   Banknote,
@@ -35,11 +34,12 @@ export function RecordPaymentModal({
   roomNumber,
   onSuccess,
 }: RecordPaymentModalProps) {
-  const { t, formatMoney, currency } = useI18n()
+  const { t, formatMoney, formatNumber, currency: activeCurrency } = useI18n()
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [method, setMethod] = useState<PaymentMethodType>('CASH')
   const [bankName, setBankName] = useState<string>('')
   const [amount, setAmount] = useState<string>('')
+  const [paymentCurrency, setPaymentCurrency] = useState('ETB')
   const [reference, setReference] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -52,6 +52,7 @@ export function RecordPaymentModal({
       getStayFinancialSummary(stayId)
         .then((res) => {
           setSummary(res)
+          setPaymentCurrency(res.currency)
           const bal = Number(res.balance || 0)
           if (bal > 0) {
             setAmount(bal.toFixed(2))
@@ -69,7 +70,17 @@ export function RecordPaymentModal({
 
   const balance = Number(summary?.balance || 0)
   const totalCharges = Number(summary?.total_due || 0)
-  const totalPayments = Number(summary?.total_paid || 0)
+  const propertyCurrency = summary?.currency || 'ETB'
+  const totalPayments = Number(
+    summary?.payments_by_currency?.[paymentCurrency] ??
+      (paymentCurrency === propertyCurrency ? summary?.total_paid : 0)
+  )
+  const formatCurrency = (value: number, currencyCode: string) =>
+    currencyCode === 'USD'
+      ? `USD ${formatNumber(value)}`
+      : currencyCode === propertyCurrency
+        ? formatMoney(value)
+        : `${currencyCode} ${formatNumber(value)}`
 
   const handleSelectMethod = (selectedMethod: PaymentMethodType) => {
     setMethod(selectedMethod)
@@ -86,7 +97,7 @@ export function RecordPaymentModal({
       return
     }
 
-    if (numAmount > balance) {
+    if (paymentCurrency === propertyCurrency && numAmount > balance) {
       setError(
         t('payment.errExceeds', {
           amount: formatMoney(numAmount),
@@ -115,6 +126,7 @@ export function RecordPaymentModal({
       await recordManualPayment({
         stay_id: stayId,
         amount: numAmount.toFixed(2),
+        currency: paymentCurrency,
         payment_method: method,
         reference: finalReference,
       })
@@ -145,9 +157,8 @@ export function RecordPaymentModal({
               </p>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-black tracking-tight text-white">
-                  {balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {formatCurrency(balance, propertyCurrency)}
                 </span>
-                <span className="text-xs font-bold text-[#FF385C]">{currency}</span>
               </div>
             </div>
             <div className="text-right">
@@ -165,13 +176,37 @@ export function RecordPaymentModal({
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-white/10 text-xs">
             <div>
               <span className="text-neutral-400 block text-[10px] uppercase font-semibold">{t('payment.totalRoomBill')}</span>
-              <span className="font-bold text-neutral-200">{formatMoney(totalCharges)}</span>
+              <span className="font-bold text-neutral-200">{formatCurrency(totalCharges, propertyCurrency)}</span>
             </div>
             <div className="text-right">
               <span className="text-neutral-400 block text-[10px] uppercase font-semibold">{t('payment.alreadyPaid')}</span>
-              <span className="font-bold text-emerald-400">{formatMoney(totalPayments)}</span>
+              <span className="font-bold text-emerald-400">{formatCurrency(totalPayments, paymentCurrency)}</span>
             </div>
           </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-neutral-600">
+            {t('payment.currency')}
+          </label>
+          <select
+            value={paymentCurrency}
+            onChange={(event) => setPaymentCurrency(event.target.value)}
+            disabled={loading}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm"
+          >
+            {[...new Set([propertyCurrency, 'USD'])].map((currencyCode) => (
+              <option key={currencyCode} value={currencyCode}>{currencyCode}</option>
+            ))}
+          </select>
+          {paymentCurrency !== propertyCurrency && (
+            <p className="mt-1.5 text-xs text-neutral-600">
+              {t('payment.currencySeparate', {
+                currency: paymentCurrency,
+                propertyCurrency,
+              })}
+            </p>
+          )}
         </div>
 
         {/* Payment Method Selector */}
@@ -272,15 +307,17 @@ export function RecordPaymentModal({
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">
-              {t('payment.amountLabel', { currency })}
+              {t('payment.amountLabel', {
+                currency: paymentCurrency === 'ETB' ? activeCurrency : paymentCurrency,
+              })}
             </label>
-            {balance > 0 && (
+            {paymentCurrency === propertyCurrency && balance > 0 && (
               <button
                 type="button"
                 onClick={() => setAmount(balance.toFixed(2))}
                 className="text-[11px] font-semibold text-[#FF385C] hover:underline flex items-center gap-1"
               >
-                <Sparkles size={12} /> {t('payment.fillBalance', { amount: formatMoney(balance) })}
+                {t('payment.fillBalance', { amount: formatCurrency(balance, propertyCurrency) })}
               </button>
             )}
           </div>

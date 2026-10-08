@@ -40,7 +40,7 @@ async def create_user(
     if not 7 <= len(username) <= 15:
     	raise ValueError("User phone number must contain 7 to 15 digits")
     repository = UserRepository(session)
-    if await repository.get_by_username(username) is not None:
+    if await repository.get_by_username(username, role) is not None:
         raise DuplicateUsernameError("Username is already in use")
     user = build_user(full_name=full_name, username=username, password=password, role=role, email=email, property_id=property_id)
     try:
@@ -69,7 +69,8 @@ async def update_user(
         if not 7 <= len(clean_username) <= 15:
             raise ValueError("User phone number must contain 7 to 15 digits")
         if clean_username != user.username.lower():
-            existing = await repository.get_by_username(clean_username)
+            target_role = role or UserRole(user.role)
+            existing = await repository.get_by_username(clean_username, target_role)
             if existing is not None and existing.id != user.id:
                 raise DuplicateUsernameError("Username is already in use")
             user.username = clean_username
@@ -99,12 +100,18 @@ async def change_password(
     session: AsyncSession,
     user: User,
     *,
-    current_password: str,
     new_password: str,
 ) -> User:
-    if not verify_password(current_password, user.password_hash):
-        raise InvalidCurrentPasswordError("Current password is incorrect")
     user.password_hash = hash_password(new_password)
+    session.add(
+        AuditLog(
+            user_id=user.id,
+            action="STAFF_PASSWORD_CHANGED",
+            entity_type="User",
+            entity_id=user.id,
+            details=json.dumps({"username": user.username}),
+        )
+    )
     await session.commit()
     await session.refresh(user)
     return user
@@ -117,9 +124,13 @@ async def set_password(session: AsyncSession, user: User, *, new_password: str) 
     return user
 
 
-async def _find_user(repo: UserRepository, username: str) -> User | None:
+async def _find_user(
+    repo: UserRepository,
+    username: str,
+    role: UserRole | None = None,
+) -> User | None:
     identifier = normalize_phone_number(username)
-    return await repo.get_by_username(identifier) if identifier else None
+    return await repo.get_by_username(identifier, role) if identifier else None
 
 
 async def public_change_password(
@@ -128,9 +139,10 @@ async def public_change_password(
     username: str,
     current_password: str,
     new_password: str,
+    role: UserRole | None = None,
 ) -> User:
     repository = UserRepository(session)
-    user = await _find_user(repository, username)
+    user = await _find_user(repository, username, role)
     if user is None or not user.is_active:
         raise InvalidCurrentPasswordError("Invalid username or password")
     if not verify_password(current_password, user.password_hash):
@@ -158,9 +170,10 @@ async def admin_override_reset_password(
     new_password: str,
     admin_username: str,
     admin_password: str,
+    target_role: UserRole | None = None,
 ) -> User:
     repository = UserRepository(session)
-    admin_user = await _find_user(repository, admin_username)
+    admin_user = await _find_user(repository, admin_username, UserRole.ADMIN)
     if admin_user is None or not admin_user.is_active:
         raise UnauthorizedAdminError("Admin credentials are invalid")
     if admin_user.role != UserRole.ADMIN.value:
@@ -168,7 +181,7 @@ async def admin_override_reset_password(
     if not verify_password(admin_password, admin_user.password_hash):
         raise UnauthorizedAdminError("Admin credentials are invalid")
 
-    target_user = await _find_user(repository, target_username)
+    target_user = await _find_user(repository, target_username, target_role)
     if target_user is None:
         raise UserNotFoundError(f"User '{target_username}' not found")
 

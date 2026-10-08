@@ -17,7 +17,6 @@ import { getFinanceReport } from '../../api/reports'
 import type { FinanceBucket, FinancePeriod, FinanceReport, Property } from '../../types/api'
 import { useI18n } from '../../i18n'
 
-const EXCHANGE_RATE_KEY = 'guest_house_etb_per_usd'
 const TIME_ZONE = 'Africa/Addis_Ababa'
 
 function localToday(): string {
@@ -50,12 +49,12 @@ function bucketKeyForTimestamp(occurredAt: string, period: FinancePeriod): strin
   return String(Number(month))
 }
 
-function money(value: number, currency: 'ETB' | 'USD'): string {
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency,
+function money(value: number, currency: string): string {
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value)
+  return `${currency} ${formatted}`
 }
 
 function paymentMethodName(method: string, t: (key: string) => string): string {
@@ -72,7 +71,7 @@ function paymentMethodName(method: string, t: (key: string) => string): string {
 
 export function FinanceReportsPage() {
   const { user } = useAuth()
-  const { t, formatDate, formatMoney } = useI18n()
+  const { t, formatDate } = useI18n()
   const userRole = user?.role
   const periodLabels: Record<FinancePeriod, string> = {
     daily: 'reports.tab.daily',
@@ -94,7 +93,6 @@ export function FinanceReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [currency, setCurrency] = useState<'ETB' | 'USD'>('ETB')
-  const [exchangeRate, setExchangeRate] = useState(() => localStorage.getItem(EXCHANGE_RATE_KEY) ?? '')
   const [displayMode, setDisplayMode] = useState<'table' | 'chart'>('table')
   const [chartStyle, setChartStyle] = useState<'bars' | 'line'>('bars')
   const [selectedBucket, setSelectedBucket] = useState<string | null>(null)
@@ -143,13 +141,14 @@ export function FinanceReportsPage() {
     return () => window.clearInterval(intervalId)
   }, [fetchReport])
 
-  const rate = Number(exchangeRate)
-  const convert = useCallback(
-    (amount: string | number) => {
-      const value = Number(amount)
-      return currency === 'ETB' ? formatMoney(value) : rate > 0 ? money(value / rate, 'USD') : t('fin.setRate')
+  const formatCurrencyTotals = useCallback(
+    (amounts: Record<string, string>) => {
+      const entries = Object.entries(amounts).filter(([, amount]) => Number(amount) !== 0)
+      return entries.length
+        ? entries.map(([code, amount]) => money(Number(amount), code)).join(' · ')
+        : money(0, currency)
     },
-    [currency, rate, formatMoney, t]
+    [currency]
   )
 
   const visibleTransactions = useMemo(() => {
@@ -164,14 +163,18 @@ export function FinanceReportsPage() {
 
   const analysis = useMemo(() => {
     const buckets = report?.buckets ?? []
-    if (buckets.length === 0 || Number(report?.total_income ?? 0) === 0) return null
-    const sorted = [...buckets].sort((left, right) => Number(left.income) - Number(right.income))
+    const totalIncome = Number(report?.income_by_currency[currency] ?? 0)
+    if (buckets.length === 0 || totalIncome === 0) return null
+    const sorted = [...buckets].sort(
+      (left, right) =>
+        Number(left.income_by_currency[currency] ?? 0) - Number(right.income_by_currency[currency] ?? 0)
+    )
     return {
       high: sorted[sorted.length - 1],
       low: sorted[0],
-      average: Number(report?.total_income ?? 0) / buckets.length,
+      average: totalIncome / buckets.length,
     }
-  }, [report])
+  }, [report, currency])
 
   function choosePeriod(nextPeriod: FinancePeriod) {
     setPeriod(nextPeriod)
@@ -185,19 +188,12 @@ export function FinanceReportsPage() {
     setSearchParams(propertyId ? { property_id: String(propertyId) } : {})
   }
 
-  function updateExchangeRate(value: string) {
-    setExchangeRate(value)
-    const nextRate = Number(value)
-    if (nextRate > 0 && Number.isFinite(nextRate)) {
-      localStorage.setItem(EXCHANGE_RATE_KEY, value)
-    } else {
-      localStorage.removeItem(EXCHANGE_RATE_KEY)
-    }
-  }
-
   const maximumBucketAmount = Math.max(
     1,
-    ...(report?.buckets.flatMap((bucket) => [Number(bucket.income), Number(bucket.expenses)]) ?? [])
+    ...(report?.buckets.flatMap((bucket) => [
+      Number(bucket.income_by_currency[currency] ?? 0),
+      Number(bucket.expenses_by_currency[currency] ?? 0),
+    ]) ?? [])
   )
 
   return (
@@ -300,27 +296,9 @@ export function FinanceReportsPage() {
             <option value="ETB">ETB</option>
             <option value="USD">USD</option>
           </select>
-          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2 text-sm">
-            <span className="whitespace-nowrap">ETB / USD</span>
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={exchangeRate}
-              onChange={(event) => updateExchangeRate(event.target.value)}
-              placeholder={t('fin.setRate')}
-              aria-label={t('fin.exchangeRate')}
-              className="w-24 bg-transparent outline-none"
-            />
-          </label>
         </div>
       </section>
 
-      {currency === 'USD' && !(rate > 0) && (
-        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {t('fin.exchangeRateHelper')}
-        </p>
-      )}
       {error && (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {error}
@@ -332,12 +310,13 @@ export function FinanceReportsPage() {
         <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              { label: t('reports.tab.income'), value: report.total_income, icon: TrendingUp, tone: 'text-emerald-700' },
-              { label: t('reports.tab.expenses'), value: report.total_expenses, icon: TrendingDown, tone: 'text-rose-700' },
-              { label: t('fin.net'), value: report.net_income, icon: Wallet, tone: 'text-neutral-900' },
+              { label: t('reports.tab.income'), value: '', amounts: report.income_by_currency, icon: TrendingUp, tone: 'text-emerald-700', count: false },
+              { label: t('reports.tab.expenses'), value: '', amounts: report.expenses_by_currency, icon: TrendingDown, tone: 'text-rose-700', count: false },
+              { label: t('fin.net'), value: '', amounts: report.net_by_currency, icon: Wallet, tone: 'text-neutral-900', count: false },
               {
                 label: t('fin.transactions'),
                 value: report.transaction_count.toString(),
+                amounts: undefined,
                 icon: Clock,
                 tone: 'text-neutral-900',
                 count: true,
@@ -351,7 +330,7 @@ export function FinanceReportsPage() {
                     <Icon size={18} className={item.tone} />
                   </div>
                   <p className={`mt-2 text-2xl font-bold ${item.tone}`}>
-                    {item.count ? item.value : convert(item.value)}
+                    {item.count ? item.value : formatCurrencyTotals(item.amounts ?? {})}
                   </p>
                   {item.label === t('fin.transactions') && report.transactions_truncated && (
                     <p className="mt-1 text-xs text-neutral-500">{t('fin.latest500')}</p>
@@ -413,7 +392,7 @@ export function FinanceReportsPage() {
                         bucket={bucket}
                         selected={selectedBucket === bucket.key}
                         onSelect={() => setSelectedBucket(selectedBucket === bucket.key ? null : bucket.key)}
-                        formatMoney={convert}
+                        formatMoney={formatCurrencyTotals}
                       />
                     ))}
                   </tbody>
@@ -431,7 +410,11 @@ export function FinanceReportsPage() {
                       <button
                         key={bucket.key}
                         type="button"
-                        title={t('fin.bucketTooltip', { label: bucket.label, income: convert(bucket.income), expenses: convert(bucket.expenses) })}
+                        title={t('fin.bucketTooltip', {
+                          label: bucket.label,
+                          income: formatCurrencyTotals(bucket.income_by_currency),
+                          expenses: formatCurrencyTotals(bucket.expenses_by_currency),
+                        })}
                         aria-label={t('fin.showTransactions', { label: bucket.label })}
                         onClick={() => setSelectedBucket(selectedBucket === bucket.key ? null : bucket.key)}
                         className={`group flex h-full min-w-7 flex-1 flex-col justify-end rounded-t-md px-0.5 hover:bg-emerald-50 ${
@@ -441,11 +424,11 @@ export function FinanceReportsPage() {
                         <span className="flex h-[86%] items-end justify-center gap-0.5">
                           <i
                             className="w-2/5 rounded-t-sm bg-emerald-600 group-hover:bg-emerald-700"
-                            style={{ height: `${Math.max(1, (Number(bucket.income) / maximumBucketAmount) * 100)}%` }}
+                            style={{ height: `${Math.max(1, (Number(bucket.income_by_currency[currency] ?? 0) / maximumBucketAmount) * 100)}%` }}
                           />
                           <i
                             className="w-2/5 rounded-t-sm bg-rose-400"
-                            style={{ height: `${Math.max(1, (Number(bucket.expenses) / maximumBucketAmount) * 100)}%` }}
+                            style={{ height: `${Math.max(1, (Number(bucket.expenses_by_currency[currency] ?? 0) / maximumBucketAmount) * 100)}%` }}
                           />
                         </span>
                         <span className="mt-2 w-full truncate text-center text-[10px] text-neutral-500">{bucket.label}</span>
@@ -462,23 +445,26 @@ export function FinanceReportsPage() {
                         fill="none"
                         stroke="#059669"
                         strokeWidth="4"
-                        points={trendPoints(report.buckets, 'income', maximumBucketAmount)}
+                        points={trendPoints(report.buckets, 'income', maximumBucketAmount, currency)}
                       />
                       <polyline
                         fill="none"
                         stroke="#fb7185"
                         strokeWidth="3"
-                        points={trendPoints(report.buckets, 'expenses', maximumBucketAmount)}
+                        points={trendPoints(report.buckets, 'expenses', maximumBucketAmount, currency)}
                       />
                       {report.buckets.map((bucket, index) => (
                         <circle
                           key={bucket.key}
                           cx={pointX(index, report.buckets.length)}
-                          cy={pointY(Number(bucket.income), maximumBucketAmount)}
+                          cy={pointY(Number(bucket.income_by_currency[currency] ?? 0), maximumBucketAmount)}
                           r="5"
                           fill="#059669"
                         >
-                          <title>{t('fin.bucketValue', { label: bucket.label, value: convert(bucket.income) })}</title>
+                          <title>{t('fin.bucketValue', {
+                            label: bucket.label,
+                            value: money(Number(bucket.income_by_currency[currency] ?? 0), currency),
+                          })}</title>
                         </circle>
                       ))}
                     </svg>
@@ -521,8 +507,12 @@ export function FinanceReportsPage() {
                 )}
               </div>
               <div className="space-y-3">
-                {report.by_source.filter((source) => Number(source.amount) > 0).map((source) => {
-                  const share = Number(report.total_income) > 0 ? (Number(source.amount) / Number(report.total_income)) * 100 : 0
+                {report.by_source.filter((source) =>
+                  Object.values(source.amount_by_currency).some((amount) => Number(amount) > 0)
+                ).map((source) => {
+                  const sourceAmount = Number(source.amount_by_currency[currency] ?? 0)
+                  const totalIncome = Number(report.income_by_currency[currency] ?? 0)
+                  const share = totalIncome > 0 ? (sourceAmount / totalIncome) * 100 : 0
                   return (
                     <button
                       key={source.name}
@@ -532,7 +522,7 @@ export function FinanceReportsPage() {
                     >
                       <span className="flex items-center justify-between gap-3 text-sm">
                         <span className="font-semibold text-neutral-800">{paymentMethodName(source.name, t)}</span>
-                        <span className="font-bold text-neutral-900">{convert(source.amount)}</span>
+                        <span className="font-bold text-neutral-900">{formatCurrencyTotals(source.amount_by_currency)}</span>
                       </span>
                       <span className="mt-1 block h-2 overflow-hidden rounded-full bg-neutral-100">
                         <i className="block h-full rounded-full bg-emerald-600" style={{ width: `${share}%` }} />
@@ -541,7 +531,9 @@ export function FinanceReportsPage() {
                     </button>
                   )
                 })}
-                {report.by_source.every((source) => Number(source.amount) === 0) && (
+                {report.by_source.every((source) =>
+                  !Object.values(source.amount_by_currency).some((amount) => Number(amount) > 0)
+                ) && (
                   <p className="py-4 text-sm text-neutral-500">{t('fin.noSuccessfulPayments')}</p>
                 )}
               </div>
@@ -553,19 +545,19 @@ export function FinanceReportsPage() {
                 <dl className="mt-4 space-y-4 text-sm">
                   <div className="flex justify-between gap-3">
                     <dt className="text-neutral-500">{t('fin.highestIncome')}</dt>
-                    <dd className="text-right font-semibold text-emerald-800">{analysis.high.label} · {convert(analysis.high.income)}</dd>
+                    <dd className="text-right font-semibold text-emerald-800">{analysis.high.label} · {money(Number(analysis.high.income_by_currency[currency] ?? 0), currency)}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-neutral-500">{t('fin.lowestIncome')}</dt>
-                    <dd className="text-right font-semibold">{analysis.low.label} · {convert(analysis.low.income)}</dd>
+                    <dd className="text-right font-semibold">{analysis.low.label} · {money(Number(analysis.low.income_by_currency[currency] ?? 0), currency)}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-neutral-500">{t('fin.averagePerInterval')}</dt>
-                    <dd className="text-right font-semibold">{convert(analysis.average)}</dd>
+                    <dd className="text-right font-semibold">{money(analysis.average, currency)}</dd>
                   </div>
                   <div className="flex justify-between gap-3 border-t border-neutral-100 pt-3">
                     <dt className="text-neutral-500">{t('fin.netForPeriod')}</dt>
-                    <dd className="text-right font-bold">{convert(report.net_income)}</dd>
+                    <dd className="text-right font-bold">{formatCurrencyTotals(report.net_by_currency)}</dd>
                   </div>
                 </dl>
               ) : (
@@ -606,7 +598,7 @@ export function FinanceReportsPage() {
                       </td>
                       <td className="px-4 py-3 text-neutral-700">{paymentMethodName(transaction.source, t)} · {t('fin.stayPayment')}</td>
                       <td className="px-4 py-3 text-neutral-500">{transaction.reference || '—'}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-emerald-800">{convert(transaction.amount)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-emerald-800">{money(Number(transaction.amount), transaction.currency)}</td>
                     </tr>
                   ))}
                   {visibleTransactions.length === 0 && (
@@ -640,7 +632,7 @@ function BucketTableRow({
   bucket: FinanceBucket
   selected: boolean
   onSelect: () => void
-  formatMoney: (amount: string | number) => string
+  formatMoney: (amounts: Record<string, string>) => string
 }) {
   return (
     <tr className={selected ? 'bg-emerald-50' : 'hover:bg-neutral-50'}>
@@ -649,9 +641,9 @@ function BucketTableRow({
           {bucket.label}
         </button>
       </td>
-      <td className="px-3 py-2.5 text-right font-semibold text-emerald-800">{formatMoney(bucket.income)}</td>
-      <td className="px-3 py-2.5 text-right text-rose-700">{formatMoney(bucket.expenses)}</td>
-      <td className="px-3 py-2.5 text-right font-bold text-neutral-900">{formatMoney(bucket.net)}</td>
+      <td className="px-3 py-2.5 text-right font-semibold text-emerald-800">{formatMoney(bucket.income_by_currency)}</td>
+      <td className="px-3 py-2.5 text-right text-rose-700">{formatMoney(bucket.expenses_by_currency)}</td>
+      <td className="px-3 py-2.5 text-right font-bold text-neutral-900">{formatMoney(bucket.net_by_currency)}</td>
       <td className="px-3 py-2.5 text-right text-neutral-600">{bucket.transaction_count}</td>
     </tr>
   )
@@ -665,8 +657,16 @@ function pointY(value: number, maximum: number): number {
   return 240 - (value / maximum) * 220
 }
 
-function trendPoints(buckets: FinanceBucket[], metric: 'income' | 'expenses', maximum: number): string {
+function trendPoints(
+  buckets: FinanceBucket[],
+  metric: 'income' | 'expenses',
+  maximum: number,
+  currency: string
+): string {
   return buckets
-    .map((bucket, index) => `${pointX(index, buckets.length)},${pointY(Number(bucket[metric]), maximum)}`)
+    .map((bucket, index) => {
+      const amounts = metric === 'income' ? bucket.income_by_currency : bucket.expenses_by_currency
+      return `${pointX(index, buckets.length)},${pointY(Number(amounts[currency] ?? 0), maximum)}`
+    })
     .join(' ')
 }

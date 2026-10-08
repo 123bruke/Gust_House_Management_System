@@ -9,6 +9,7 @@ from app.models.charge import Charge, ChargeType
 from app.models.expense import Expense
 from app.models.guest import Guest
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
+from app.models.property import Property
 from app.models.reservation import Reservation, ReservationStatus
 from app.models.room import Room, RoomStatus
 from app.models.stay import Stay, StayStatus
@@ -31,6 +32,26 @@ from app.schemas.reports import (
 
 _REPORT_TIMEZONE = timezone(timedelta(hours=3), name="EAT")
 _PAYMENT_TRANSACTION_LIMIT = 500
+
+
+def _net_by_currency(
+	income: dict[str, Decimal], expenses: dict[str, Decimal]
+) -> dict[str, Decimal]:
+	return {
+		currency: income.get(currency, Decimal("0.00"))
+		- expenses.get(currency, Decimal("0.00"))
+		for currency in set(income) | set(expenses)
+	}
+
+
+def _percentages_by_currency(
+	amounts: dict[str, Decimal], totals: dict[str, Decimal]
+) -> dict[str, float]:
+	percentages = {}
+	for currency, amount in amounts.items():
+		total = totals.get(currency, Decimal("0.00"))
+		percentages[currency] = round(float((amount / total) * 100), 1) if total > 0 else 0.0
+	return percentages
 
 
 def _to_utc_range(d: date) -> tuple[datetime, datetime]:
@@ -153,31 +174,51 @@ async def get_finance_report(
 		func.coalesce(func.sum(Payment.amount), Decimal("0.00"))
 	).where(*payment_filters)
 	total_income = Decimal(str((await session.execute(payment_total_stmt)).scalar() or "0.00"))
+	income_by_currency = {
+		currency: Decimal(str(amount or "0.00"))
+		for currency, amount in (
+			await session.execute(
+				select(Payment.currency, func.sum(Payment.amount))
+				.where(*payment_filters)
+				.group_by(Payment.currency)
+			)
+		).all()
+	}
 
 	payment_bucket_stmt = (
-		select(bucket_expr, func.sum(Payment.amount), func.count(Payment.id))
+		select(bucket_expr, Payment.currency, func.sum(Payment.amount), func.count(Payment.id))
 		.where(*payment_filters)
-		.group_by(bucket_expr)
+		.group_by(bucket_expr, Payment.currency)
 	)
-	for key, amount, count in (await session.execute(payment_bucket_stmt)).all():
+	for key, currency_code, amount, count in (await session.execute(payment_bucket_stmt)).all():
 		bucket = bucket_values.get(str(key))
 		if bucket is not None:
-			bucket.income = Decimal(str(amount or "0.00"))
-			bucket.transaction_count = int(count)
+			amount_value = Decimal(str(amount or "0.00"))
+			bucket.income += amount_value
+			bucket.income_by_currency[currency_code] = amount_value
+			bucket.transaction_count += int(count)
 
 	source_stmt = (
-		select(Payment.payment_method, func.sum(Payment.amount), func.count(Payment.id))
+		select(Payment.payment_method, Payment.currency, func.sum(Payment.amount), func.count(Payment.id))
 		.where(*payment_filters)
-		.group_by(Payment.payment_method)
+		.group_by(Payment.payment_method, Payment.currency)
 	)
-	source_rows = {
-		method: (Decimal(str(amount or "0.00")), int(count))
-		for method, amount, count in (await session.execute(source_stmt)).all()
-	}
+	source_rows: dict[str, tuple[Decimal, int, dict[str, Decimal]]] = {}
+	for method, currency_code, amount, count in (await session.execute(source_stmt)).all():
+		amount_value = Decimal(str(amount or "0.00"))
+		current_amount, current_count, currency_amounts = source_rows.get(
+			method, (Decimal("0.00"), 0, {})
+		)
+		currency_amounts[currency_code] = amount_value
+		source_rows[method] = (current_amount + amount_value, current_count + int(count), currency_amounts)
 	all_methods = [method.value for method in PaymentMethod]
 	by_source = [
-		FinanceSource(name=method, amount=source_rows.get(method, (Decimal("0.00"), 0))[0],
-			count=source_rows.get(method, (Decimal("0.00"), 0))[1])
+		FinanceSource(
+			name=method,
+			amount=source_rows.get(method, (Decimal("0.00"), 0, {}))[0],
+			count=source_rows.get(method, (Decimal("0.00"), 0, {}))[1],
+			amount_by_currency=source_rows.get(method, (Decimal("0.00"), 0, {}))[2],
+		)
 		for method in all_methods
 	]
 
@@ -190,17 +231,37 @@ async def get_finance_report(
 		func.coalesce(func.sum(Expense.amount), Decimal("0.00"))
 	).where(*expense_filters)
 	total_expenses = Decimal(str((await session.execute(expense_total_stmt)).scalar() or "0.00"))
+	expenses_by_currency = {
+		currency_code: Decimal(str(amount or "0.00"))
+		for currency_code, amount in (
+			await session.execute(
+				select(Property.currency, func.sum(Expense.amount))
+				.join(Property, Property.id == Expense.property_id)
+				.where(*expense_filters)
+				.group_by(Property.currency)
+			)
+		).all()
+	}
 	expense_bucket_stmt = (
-		select(expense_bucket_expr, func.sum(Expense.amount))
+		select(expense_bucket_expr, Property.currency, func.sum(Expense.amount))
+		.join(Property, Property.id == Expense.property_id)
 		.where(*expense_filters)
-		.group_by(expense_bucket_expr)
+		.group_by(expense_bucket_expr, Property.currency)
 	)
-	for key, amount in (await session.execute(expense_bucket_stmt)).all():
+	for key, currency_code, amount in (await session.execute(expense_bucket_stmt)).all():
 		bucket = bucket_values.get(str(key))
 		if bucket is not None:
-			bucket.expenses = Decimal(str(amount or "0.00"))
+			amount_value = Decimal(str(amount or "0.00"))
+			bucket.expenses += amount_value
+			bucket.expenses_by_currency[currency_code] = amount_value
 	for bucket in buckets:
 		bucket.net = bucket.income - bucket.expenses
+		currencies = set(bucket.income_by_currency) | set(bucket.expenses_by_currency)
+		bucket.net_by_currency = {
+			code: bucket.income_by_currency.get(code, Decimal("0.00"))
+			- bucket.expenses_by_currency.get(code, Decimal("0.00"))
+			for code in currencies
+		}
 
 	transaction_count_stmt = select(func.count(Payment.id)).where(*payment_filters)
 	transaction_count = int((await session.execute(transaction_count_stmt)).scalar() or 0)
@@ -219,6 +280,7 @@ async def get_finance_report(
 			id=payment.id,
 			occurred_at=payment.paid_at or payment.created_at,
 			amount=payment.amount,
+			currency=payment.currency,
 			source=payment.payment_method,
 			guest_name=guest_name,
 			room_number=room_number,
@@ -239,6 +301,13 @@ async def get_finance_report(
 		transaction_count=transaction_count,
 		transactions_truncated=transaction_count > _PAYMENT_TRANSACTION_LIMIT,
 		updated_at=datetime.now(timezone.utc),
+		income_by_currency=income_by_currency,
+		expenses_by_currency=expenses_by_currency,
+		net_by_currency={
+			code: income_by_currency.get(code, Decimal("0.00"))
+			- expenses_by_currency.get(code, Decimal("0.00"))
+			for code in set(income_by_currency) | set(expenses_by_currency)
+		},
 	)
 
 
@@ -250,25 +319,44 @@ async def get_daily_report(
 	start_dt, end_dt = _to_utc_range(target_date)
 
 	# 1. Income
-	income_stmt = select(func.coalesce(func.sum(Payment.amount), Decimal("0.00"))).where(
+	income_filters = [
 		Payment.status == PaymentStatus.SUCCESS.value,
 		Payment.created_at >= start_dt,
 		Payment.created_at <= end_dt,
-	)
+	]
 	if property_id is not None:
-		income_stmt = income_stmt.where(Payment.property_id == property_id)
-	income_res = await session.execute(income_stmt)
-	todays_income = Decimal(str(income_res.scalar() or "0.00"))
+		income_filters.append(Payment.property_id == property_id)
+	income_by_currency = {
+		currency: Decimal(str(amount or "0.00"))
+		for currency, amount in (
+			await session.execute(
+				select(Payment.currency, func.sum(Payment.amount))
+				.where(*income_filters)
+				.group_by(Payment.currency)
+			)
+		).all()
+	}
+	todays_income = sum(income_by_currency.values(), Decimal("0.00"))
 
 	# 2. Expenses
-	expense_stmt = select(func.coalesce(func.sum(Expense.amount), Decimal("0.00"))).where(
+	expense_filters = [
 		Expense.expense_date >= start_dt,
 		Expense.expense_date <= end_dt,
-	)
+	]
 	if property_id is not None:
-		expense_stmt = expense_stmt.where(Expense.property_id == property_id)
-	expense_res = await session.execute(expense_stmt)
-	todays_expenses = Decimal(str(expense_res.scalar() or "0.00"))
+		expense_filters.append(Expense.property_id == property_id)
+	expenses_by_currency = {
+		currency: Decimal(str(amount or "0.00"))
+		for currency, amount in (
+			await session.execute(
+				select(Property.currency, func.sum(Expense.amount))
+				.join(Property, Property.id == Expense.property_id)
+				.where(*expense_filters)
+				.group_by(Property.currency)
+			)
+		).all()
+	}
+	todays_expenses = sum(expenses_by_currency.values(), Decimal("0.00"))
 
 	# 3. Room Status Counts
 	rooms_stmt = select(Room.status, func.count(Room.id)).where(Room.is_active.is_(True))
@@ -297,38 +385,61 @@ async def get_daily_report(
 	checkouts = (await session.execute(checkout_stmt)).scalar() or 0
 
 	# 5. Penalties Total
-	penalties_stmt = select(
-		func.coalesce(func.sum(Charge.amount * Charge.quantity), Decimal("0.00"))
-	).where(
+	penalty_filters = [
 		Charge.charge_type == ChargeType.LATE_CHECKOUT_PENALTY.value,
 		Charge.charged_at >= start_dt,
 		Charge.charged_at <= end_dt,
-	)
+	]
 	if property_id is not None:
-		penalties_stmt = penalties_stmt.where(Charge.property_id == property_id)
-	penalties_total = Decimal(str((await session.execute(penalties_stmt)).scalar() or "0.00"))
+		penalty_filters.append(Charge.property_id == property_id)
+	penalties_by_currency = {
+		currency: Decimal(str(amount or "0.00"))
+		for currency, amount in (
+			await session.execute(
+				select(Property.currency, func.sum(Charge.amount * Charge.quantity))
+				.join(Property, Property.id == Charge.property_id)
+				.where(*penalty_filters)
+				.group_by(Property.currency)
+			)
+		).all()
+	}
+	penalties_total = sum(penalties_by_currency.values(), Decimal("0.00"))
 
 	# 6. Outstanding Credit (Total due - Total paid for active stays)
-	active_stays_stmt = select(Stay.id).where(Stay.status == StayStatus.CHECKED_IN.value)
+	active_stays_stmt = (
+		select(Stay.id, Property.currency)
+		.join(Property, Property.id == Stay.property_id)
+		.where(Stay.status == StayStatus.CHECKED_IN.value)
+	)
 	if property_id is not None:
 		active_stays_stmt = active_stays_stmt.where(Stay.property_id == property_id)
-	active_stay_ids = (await session.execute(active_stays_stmt)).scalars().all()
+	active_stays = (await session.execute(active_stays_stmt)).all()
 
-	outstanding_credit = Decimal("0.00")
-	for stay_id in active_stay_ids:
+	outstanding_credit_by_currency: dict[str, Decimal] = {}
+	for stay_id, currency_code in active_stays:
 		charges_sum_stmt = select(func.coalesce(func.sum(Charge.amount * Charge.quantity), Decimal("0.00"))).where(Charge.stay_id == stay_id)
-		paid_sum_stmt = select(func.coalesce(func.sum(Payment.amount), Decimal("0.00"))).where(Payment.stay_id == stay_id, Payment.status == PaymentStatus.SUCCESS.value)
+		paid_sum_stmt = select(func.coalesce(func.sum(Payment.amount), Decimal("0.00"))).where(
+			Payment.stay_id == stay_id,
+			Payment.status == PaymentStatus.SUCCESS.value,
+			Payment.currency == currency_code,
+		)
 		stay_due = Decimal(str((await session.execute(charges_sum_stmt)).scalar() or "0.00"))
 		stay_paid = Decimal(str((await session.execute(paid_sum_stmt)).scalar() or "0.00"))
 		bal = stay_due - stay_paid
 		if bal > 0:
-			outstanding_credit += bal
+			outstanding_credit_by_currency[currency_code] = (
+				outstanding_credit_by_currency.get(currency_code, Decimal("0.00")) + bal
+			)
+	outstanding_credit = sum(outstanding_credit_by_currency.values(), Decimal("0.00"))
 
 	return DailyReport(
 		date=target_date.isoformat(),
 		todays_income=todays_income,
+		todays_income_by_currency=income_by_currency,
 		todays_expenses=todays_expenses,
+		todays_expenses_by_currency=expenses_by_currency,
 		net_income=todays_income - todays_expenses,
+		net_income_by_currency=_net_by_currency(income_by_currency, expenses_by_currency),
 		occupied_rooms=room_counts.get(RoomStatus.OCCUPIED.value, 0),
 		available_rooms=room_counts.get(RoomStatus.AVAILABLE.value, 0),
 		expected_rooms=room_counts.get(RoomStatus.EXPECTED.value, 0),
@@ -337,7 +448,9 @@ async def get_daily_report(
 		check_ins_count=checkins,
 		check_outs_count=checkouts,
 		penalties_total=penalties_total,
+		penalties_by_currency=penalties_by_currency,
 		outstanding_credit=outstanding_credit,
+		outstanding_credit_by_currency=outstanding_credit_by_currency,
 	)
 
 
@@ -363,7 +476,7 @@ async def get_income_analysis(
 			end_date = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
 
 	stmt = (
-		select(Payment.payment_method, func.coalesce(func.sum(Payment.amount), Decimal("0.00")), func.count(Payment.id))
+		select(Payment.payment_method, Payment.currency, func.sum(Payment.amount), func.count(Payment.id))
 		.where(
 			Payment.status == PaymentStatus.SUCCESS.value,
 			Payment.created_at >= start_date,
@@ -372,9 +485,18 @@ async def get_income_analysis(
 	)
 	if property_id is not None:
 		stmt = stmt.where(Payment.property_id == property_id)
-	stmt = stmt.group_by(Payment.payment_method)
+	stmt = stmt.group_by(Payment.payment_method, Payment.currency)
 	rows = (await session.execute(stmt)).all()
-	amounts_by_method = {r[0]: (Decimal(str(r[1])), r[2]) for r in rows}
+	amounts_by_method: dict[str, dict[str, Decimal]] = {}
+	counts_by_method: dict[str, int] = {}
+	total_income_by_currency: dict[str, Decimal] = {}
+	for method, currency_code, amount, count in rows:
+		amount_value = Decimal(str(amount or "0.00"))
+		amounts_by_method.setdefault(method, {})[currency_code] = amount_value
+		counts_by_method[method] = counts_by_method.get(method, 0) + int(count)
+		total_income_by_currency[currency_code] = (
+			total_income_by_currency.get(currency_code, Decimal("0.00")) + amount_value
+		)
 
 	all_methods = [
 		PaymentMethod.CASH.value,
@@ -385,11 +507,20 @@ async def get_income_analysis(
 		PaymentMethod.CREDIT.value,
 	]
 	items = []
-	total_income = Decimal("0.00")
+	total_income = sum(total_income_by_currency.values(), Decimal("0.00"))
 	for m in all_methods:
-		amt, cnt = amounts_by_method.get(m, (Decimal("0.00"), 0))
-		items.append(PaymentMethodIncome(method=m, amount=amt, count=cnt))
-		total_income += amt
+		amounts = amounts_by_method.get(m, {})
+		items.append(
+			PaymentMethodIncome(
+				method=m,
+				amount=sum(amounts.values(), Decimal("0.00")),
+				count=counts_by_method.get(m, 0),
+				amount_by_currency=amounts,
+				percentage_by_currency=_percentages_by_currency(
+					amounts, total_income_by_currency
+				),
+			)
+		)
 
 	return IncomeAnalysisReport(
 		period=period,
@@ -397,6 +528,7 @@ async def get_income_analysis(
 		end_date=end_date,
 		by_method=items,
 		total_income=total_income,
+		total_income_by_currency=total_income_by_currency,
 	)
 
 
@@ -422,7 +554,8 @@ async def get_expenses_analysis(
 			end_date = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
 
 	stmt = (
-		select(Expense.category, func.coalesce(func.sum(Expense.amount), Decimal("0.00")))
+		select(Expense.category, Property.currency, func.sum(Expense.amount))
+		.join(Property, Property.id == Expense.property_id)
 		.where(
 			Expense.expense_date >= start_date,
 			Expense.expense_date <= end_date,
@@ -430,15 +563,34 @@ async def get_expenses_analysis(
 	)
 	if property_id is not None:
 		stmt = stmt.where(Expense.property_id == property_id)
-	stmt = stmt.group_by(Expense.category).order_by(func.sum(Expense.amount).desc())
+	stmt = stmt.group_by(Expense.category, Property.currency).order_by(Expense.category)
 	rows = (await session.execute(stmt)).all()
-	total_expenses = sum((Decimal(str(r[1])) for r in rows), Decimal("0.00"))
+	amounts_by_category: dict[str, dict[str, Decimal]] = {}
+	total_expenses_by_currency: dict[str, Decimal] = {}
+	for category, currency_code, amount in rows:
+		amount_value = Decimal(str(amount or "0.00"))
+		amounts_by_category.setdefault(category, {})[currency_code] = amount_value
+		total_expenses_by_currency[currency_code] = (
+			total_expenses_by_currency.get(currency_code, Decimal("0.00")) + amount_value
+		)
+	total_expenses = sum(total_expenses_by_currency.values(), Decimal("0.00"))
 
 	items = []
-	for r in rows:
-		amt = Decimal(str(r[1]))
-		pct = float((amt / total_expenses) * 100) if total_expenses > 0 else 0.0
-		items.append(ExpenseCategoryItem(category=r[0], amount=amt, percentage=round(pct, 1)))
+	for category, amounts in amounts_by_category.items():
+		amount = sum(amounts.values(), Decimal("0.00"))
+		items.append(
+			ExpenseCategoryItem(
+				category=category,
+				amount=amount,
+				percentage=round(float((amount / total_expenses) * 100), 1)
+				if total_expenses > 0
+				else 0.0,
+				amount_by_currency=amounts,
+				percentage_by_currency=_percentages_by_currency(
+					amounts, total_expenses_by_currency
+				),
+			)
+		)
 
 	return ExpenseAnalysisReport(
 		period=period,
@@ -446,6 +598,7 @@ async def get_expenses_analysis(
 		end_date=end_date,
 		by_category=items,
 		total_expenses=total_expenses,
+		total_expenses_by_currency=total_expenses_by_currency,
 	)
 
 
@@ -457,48 +610,74 @@ async def get_weekly_report(
 	# Last 7 days including target_date
 	start_date = target_date - timedelta(days=6)
 	days: list[DaySummary] = []
-	total_income = Decimal("0.00")
-	total_expense = Decimal("0.00")
+	total_income_by_currency: dict[str, Decimal] = {}
+	total_expense_by_currency: dict[str, Decimal] = {}
 
 	for i in range(7):
 		d = start_date + timedelta(days=i)
 		s_dt, e_dt = _to_utc_range(d)
-		inc_stmt = select(func.coalesce(func.sum(Payment.amount), Decimal("0.00"))).where(
+		inc_stmt = select(Payment.currency, func.sum(Payment.amount)).where(
 			Payment.status == PaymentStatus.SUCCESS.value,
 			Payment.created_at >= s_dt,
 			Payment.created_at <= e_dt,
 		)
 		if property_id is not None:
 			inc_stmt = inc_stmt.where(Payment.property_id == property_id)
+		inc_stmt = inc_stmt.group_by(Payment.currency)
 
-		exp_stmt = select(func.coalesce(func.sum(Expense.amount), Decimal("0.00"))).where(
-			Expense.expense_date >= s_dt,
-			Expense.expense_date <= e_dt,
+		exp_stmt = (
+			select(Property.currency, func.sum(Expense.amount))
+			.join(Property, Property.id == Expense.property_id)
+			.where(
+				Expense.expense_date >= s_dt,
+				Expense.expense_date <= e_dt,
+			)
 		)
 		if property_id is not None:
 			exp_stmt = exp_stmt.where(Expense.property_id == property_id)
+		exp_stmt = exp_stmt.group_by(Property.currency)
 
-		inc = Decimal(str((await session.execute(inc_stmt)).scalar() or "0.00"))
-		exp = Decimal(str((await session.execute(exp_stmt)).scalar() or "0.00"))
-		total_income += inc
-		total_expense += exp
+		income_by_currency = {
+			code: Decimal(str(amount or "0.00"))
+			for code, amount in (await session.execute(inc_stmt)).all()
+		}
+		expense_by_currency = {
+			code: Decimal(str(amount or "0.00"))
+			for code, amount in (await session.execute(exp_stmt)).all()
+		}
+		for code, amount in income_by_currency.items():
+			total_income_by_currency[code] = total_income_by_currency.get(
+				code, Decimal("0.00")
+			) + amount
+		for code, amount in expense_by_currency.items():
+			total_expense_by_currency[code] = total_expense_by_currency.get(
+				code, Decimal("0.00")
+			) + amount
 		days.append(
 			DaySummary(
 				day=d.strftime("%a"),
 				date=d.isoformat(),
-				income=inc,
-				expense=exp,
-				net=inc - exp,
+				income=sum(income_by_currency.values(), Decimal("0.00")),
+				income_by_currency=income_by_currency,
+				expense=sum(expense_by_currency.values(), Decimal("0.00")),
+				expense_by_currency=expense_by_currency,
+				net=sum(_net_by_currency(income_by_currency, expense_by_currency).values(), Decimal("0.00")),
+				net_by_currency=_net_by_currency(income_by_currency, expense_by_currency),
 			)
 		)
 
+	total_income = sum(total_income_by_currency.values(), Decimal("0.00"))
+	total_expense = sum(total_expense_by_currency.values(), Decimal("0.00"))
 	return WeeklyReport(
 		start_date=start_date.isoformat(),
 		end_date=target_date.isoformat(),
 		days=days,
 		total_income=total_income,
+		total_income_by_currency=total_income_by_currency,
 		total_expense=total_expense,
+		total_expense_by_currency=total_expense_by_currency,
 		net_income=total_income - total_expense,
+		net_income_by_currency=_net_by_currency(total_income_by_currency, total_expense_by_currency),
 	)
 
 
@@ -536,15 +715,38 @@ async def get_monthly_report(
 	if property_id is not None:
 		inc_stmt = inc_stmt.where(Payment.property_id == property_id)
 
-	exp_stmt = select(func.coalesce(func.sum(Expense.amount), Decimal("0.00"))).where(
+	expense_filters = [
 		Expense.expense_date >= start_dt,
 		Expense.expense_date <= end_dt,
-	)
+	]
 	if property_id is not None:
-		exp_stmt = exp_stmt.where(Expense.property_id == property_id)
+		expense_filters.append(Expense.property_id == property_id)
+	exp_stmt = select(func.coalesce(func.sum(Expense.amount), Decimal("0.00"))).where(
+		*expense_filters
+	)
 
 	total_income = Decimal(str((await session.execute(inc_stmt)).scalar() or "0.00"))
 	total_expenses = Decimal(str((await session.execute(exp_stmt)).scalar() or "0.00"))
+	total_income_by_currency = {
+		code: Decimal(str(amount or "0.00"))
+		for code, amount in (
+			await session.execute(
+				inc_stmt.with_only_columns(Payment.currency, func.sum(Payment.amount))
+				.group_by(Payment.currency)
+			)
+		).all()
+	}
+	total_expenses_by_currency = {
+		code: Decimal(str(amount or "0.00"))
+		for code, amount in (
+			await session.execute(
+				select(Property.currency, func.sum(Expense.amount))
+				.join(Property, Property.id == Expense.property_id)
+				.where(*expense_filters)
+				.group_by(Property.currency)
+			)
+		).all()
+	}
 
 	# Distinct guests
 	guests_stmt = select(func.count(func.distinct(Stay.guest_id))).where(
@@ -563,7 +765,25 @@ async def get_monthly_report(
 	)
 	if property_id is not None:
 		pen_stmt = pen_stmt.where(Charge.property_id == property_id)
+	penalty_filters = [
+		Charge.charge_type == ChargeType.LATE_CHECKOUT_PENALTY.value,
+		Charge.charged_at >= start_dt,
+		Charge.charged_at <= end_dt,
+	]
+	if property_id is not None:
+		penalty_filters.append(Charge.property_id == property_id)
 	total_penalties = Decimal(str((await session.execute(pen_stmt)).scalar() or "0.00"))
+	total_penalties_by_currency = {
+		code: Decimal(str(amount or "0.00"))
+		for code, amount in (
+			await session.execute(
+				select(Property.currency, func.sum(Charge.amount * Charge.quantity))
+				.join(Property, Property.id == Charge.property_id)
+				.where(*penalty_filters)
+				.group_by(Property.currency)
+			)
+		).all()
+	}
 
 	# Total rooms
 	rooms_cnt_stmt = select(func.count(Room.id)).where(Room.is_active.is_(True))
@@ -581,10 +801,14 @@ async def get_monthly_report(
 	occupancy_rate = min(100.0, round(float(occupied_stays / (total_rooms * num_days)) * 100, 1))
 
 	avg_daily_income = round(total_income / Decimal(num_days), 2)
+	average_daily_income_by_currency = {
+		code: round(amount / Decimal(num_days), 2)
+		for code, amount in total_income_by_currency.items()
+	}
 
 	# Daily breakdown
 	daily_inc_stmt = (
-		select(func.date(Payment.created_at), func.coalesce(func.sum(Payment.amount), Decimal("0.00")))
+		select(func.date(Payment.created_at), Payment.currency, func.sum(Payment.amount))
 		.where(
 			Payment.status == PaymentStatus.SUCCESS.value,
 			Payment.created_at >= start_dt,
@@ -593,13 +817,16 @@ async def get_monthly_report(
 	)
 	if property_id is not None:
 		daily_inc_stmt = daily_inc_stmt.where(Payment.property_id == property_id)
-	daily_inc_stmt = daily_inc_stmt.group_by(func.date(Payment.created_at))
+	daily_inc_stmt = daily_inc_stmt.group_by(func.date(Payment.created_at), Payment.currency)
 
 	inc_rows = (await session.execute(daily_inc_stmt)).all()
-	inc_by_date = {str(r[0]): Decimal(str(r[1])) for r in inc_rows}
+	inc_by_date: dict[str, dict[str, Decimal]] = {}
+	for day, code, amount in inc_rows:
+		inc_by_date.setdefault(str(day), {})[code] = Decimal(str(amount or "0.00"))
 
 	daily_exp_stmt = (
-		select(func.date(Expense.expense_date), func.coalesce(func.sum(Expense.amount), Decimal("0.00")))
+		select(func.date(Expense.expense_date), Property.currency, func.sum(Expense.amount))
+		.join(Property, Property.id == Expense.property_id)
 		.where(
 			Expense.expense_date >= start_dt,
 			Expense.expense_date <= end_dt,
@@ -607,52 +834,74 @@ async def get_monthly_report(
 	)
 	if property_id is not None:
 		daily_exp_stmt = daily_exp_stmt.where(Expense.property_id == property_id)
-	daily_exp_stmt = daily_exp_stmt.group_by(func.date(Expense.expense_date))
+	daily_exp_stmt = daily_exp_stmt.group_by(func.date(Expense.expense_date), Property.currency)
 
 	exp_rows = (await session.execute(daily_exp_stmt)).all()
-	exp_by_date = {str(r[0]): Decimal(str(r[1])) for r in exp_rows}
+	exp_by_date: dict[str, dict[str, Decimal]] = {}
+	for day, code, amount in exp_rows:
+		exp_by_date.setdefault(str(day), {})[code] = Decimal(str(amount or "0.00"))
 
 	days: list[DaySummary] = []
 	if is_all_time:
 		all_dates = sorted(set(inc_by_date.keys()) | set(exp_by_date.keys()), reverse=True)
 		for d_str in all_dates:
-			inc = inc_by_date.get(d_str, Decimal("0.00"))
-			exp = exp_by_date.get(d_str, Decimal("0.00"))
+			income_by_currency = inc_by_date.get(d_str, {})
+			expense_by_currency = exp_by_date.get(d_str, {})
+			inc = sum(income_by_currency.values(), Decimal("0.00"))
+			exp = sum(expense_by_currency.values(), Decimal("0.00"))
+			net_by_currency = _net_by_currency(income_by_currency, expense_by_currency)
 			d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
 			days.append(
 				DaySummary(
 					day=d_obj.strftime("%a"),
 					date=d_str,
 					income=inc,
+					income_by_currency=income_by_currency,
 					expense=exp,
+					expense_by_currency=expense_by_currency,
 					net=inc - exp,
+					net_by_currency=net_by_currency,
 				)
 			)
 	else:
 		for day_num in range(num_days, 0, -1):
 			d = date(year, month, day_num)
 			d_str = d.isoformat()
-			inc = inc_by_date.get(d_str, Decimal("0.00"))
-			exp = exp_by_date.get(d_str, Decimal("0.00"))
+			income_by_currency = inc_by_date.get(d_str, {})
+			expense_by_currency = exp_by_date.get(d_str, {})
+			inc = sum(income_by_currency.values(), Decimal("0.00"))
+			exp = sum(expense_by_currency.values(), Decimal("0.00"))
+			net_by_currency = _net_by_currency(income_by_currency, expense_by_currency)
 			days.append(
 				DaySummary(
 					day=d.strftime("%a"),
 					date=d_str,
 					income=inc,
+					income_by_currency=income_by_currency,
 					expense=exp,
+					expense_by_currency=expense_by_currency,
 					net=inc - exp,
+					net_by_currency=net_by_currency,
 				)
 			)
 
 	return MonthlyReport(
 		month=month_title,
 		total_income=total_income,
+		total_income_by_currency=total_income_by_currency,
 		total_expenses=total_expenses,
+		total_expenses_by_currency=total_expenses_by_currency,
 		net_income=total_income - total_expenses,
+		net_income_by_currency=_net_by_currency(
+			total_income_by_currency, total_expenses_by_currency
+		),
 		total_guests=total_guests,
 		average_daily_income=avg_daily_income,
+		average_daily_income_by_currency=average_daily_income_by_currency,
 		total_credit=Decimal("0.00"),
+		total_credit_by_currency={},
 		total_penalties=total_penalties,
+		total_penalties_by_currency=total_penalties_by_currency,
 		occupancy_rate=occupancy_rate,
 		days=days,
 	)
@@ -664,6 +913,13 @@ async def get_daily_manifest(
 	if target_date is None:
 		target_date = datetime.now(timezone.utc).date()
 	start_dt, end_dt = _to_utc_range(target_date)
+	property_currency_stmt = select(Property.id, Property.currency)
+	if property_id is not None:
+		property_currency_stmt = property_currency_stmt.where(Property.id == property_id)
+	property_currencies = {
+		property_id: currency_code.upper()
+		for property_id, currency_code in (await session.execute(property_currency_stmt)).all()
+	}
 
 	items: list[DailyManifestItem] = []
 
@@ -725,22 +981,23 @@ async def get_daily_manifest(
 		| {row[0].id for row in checkout_rows}
 		| {row[0].id for row in staying_rows}
 	)
-	stay_payments: dict[int, Decimal] = {}
+	stay_payments_by_currency: dict[int, dict[str, Decimal]] = {}
 	stay_charges: dict[int, Decimal] = {}
 
 	if stay_ids:
 		pmt_stmt = (
-			select(Payment.stay_id, func.coalesce(func.sum(Payment.amount), Decimal("0.00")))
+			select(Payment.stay_id, Payment.currency, func.coalesce(func.sum(Payment.amount), Decimal("0.00")))
 			.where(
 				Payment.stay_id.in_(stay_ids),
 				Payment.status == PaymentStatus.SUCCESS.value,
 				Payment.created_at >= start_dt,
 				Payment.created_at <= end_dt,
 			)
-			.group_by(Payment.stay_id)
+			.group_by(Payment.stay_id, Payment.currency)
 		)
 		pmt_res = await session.execute(pmt_stmt)
-		stay_payments = {r[0]: Decimal(str(r[1])) for r in pmt_res.all()}
+		for stay_id, currency_code, amount in pmt_res.all():
+			stay_payments_by_currency.setdefault(stay_id, {})[currency_code] = Decimal(str(amount))
 
 		chg_stmt = (
 			select(
@@ -756,7 +1013,9 @@ async def get_daily_manifest(
 	for stay, guest, room in checkin_rows:
 		checkout_target = stay.actual_checkout_at or stay.expected_checkout
 		days = max(1, (checkout_target.date() - stay.check_in_at.date()).days) if checkout_target else 1
-		paid = stay_payments.get(stay.id, Decimal("0.00"))
+		currency_code = property_currencies[stay.property_id]
+		paid_by_currency = stay_payments_by_currency.get(stay.id, {})
+		paid = paid_by_currency.get(currency_code, Decimal("0.00"))
 		expected = stay_charges.get(stay.id, Decimal("0.00"))
 		if expected == Decimal("0.00"):
 			expected = Decimal(str(room.price or 0)) * Decimal(days)
@@ -774,7 +1033,9 @@ async def get_daily_manifest(
 				room_type=room.room_type,
 				days_count=days,
 				amount_paid=paid,
+				amount_paid_by_currency=paid_by_currency,
 				expected_amount=expected,
+				currency=currency_code,
 				check_in_date=stay.check_in_at,
 				checkout_date=stay.actual_checkout_at or stay.expected_checkout,
 				status=stay.status,
@@ -785,7 +1046,9 @@ async def get_daily_manifest(
 	for stay, guest, room in checkout_rows:
 		checkout_target = stay.actual_checkout_at or stay.expected_checkout
 		days = max(1, (checkout_target.date() - stay.check_in_at.date()).days) if checkout_target else 1
-		paid = stay_payments.get(stay.id, Decimal("0.00"))
+		currency_code = property_currencies[stay.property_id]
+		paid_by_currency = stay_payments_by_currency.get(stay.id, {})
+		paid = paid_by_currency.get(currency_code, Decimal("0.00"))
 		expected = stay_charges.get(stay.id, Decimal("0.00"))
 		if expected == Decimal("0.00"):
 			expected = Decimal(str(room.price or 0)) * Decimal(days)
@@ -803,7 +1066,9 @@ async def get_daily_manifest(
 				room_type=room.room_type,
 				days_count=days,
 				amount_paid=paid,
+				amount_paid_by_currency=paid_by_currency,
 				expected_amount=expected,
+				currency=currency_code,
 				check_in_date=stay.check_in_at,
 				checkout_date=stay.actual_checkout_at,
 				status=stay.status,
@@ -814,7 +1079,9 @@ async def get_daily_manifest(
 	for stay, guest, room in staying_rows:
 		checkout_target = stay.actual_checkout_at or stay.expected_checkout
 		days = max(1, (checkout_target.date() - stay.check_in_at.date()).days) if checkout_target else 1
-		paid = stay_payments.get(stay.id, Decimal("0.00"))
+		currency_code = property_currencies[stay.property_id]
+		paid_by_currency = stay_payments_by_currency.get(stay.id, {})
+		paid = paid_by_currency.get(currency_code, Decimal("0.00"))
 		expected = stay_charges.get(stay.id, Decimal("0.00"))
 		if expected == Decimal("0.00"):
 			expected = Decimal(str(room.price or 0)) * Decimal(days)
@@ -832,7 +1099,9 @@ async def get_daily_manifest(
 				room_type=room.room_type,
 				days_count=days,
 				amount_paid=paid,
+				amount_paid_by_currency=paid_by_currency,
 				expected_amount=expected,
+				currency=currency_code,
 				check_in_date=stay.check_in_at,
 				checkout_date=stay.actual_checkout_at or stay.expected_checkout,
 				status=stay.status,
@@ -857,6 +1126,7 @@ async def get_daily_manifest(
 
 	for res, guest, room in res_rows:
 		days = max(1, (res.expected_checkout.date() - res.expected_arrival.date()).days)
+		currency_code = property_currencies[res.property_id]
 		expected = (
 			res.expected_amount
 			if res.expected_amount > 0
@@ -876,7 +1146,9 @@ async def get_daily_manifest(
 				room_type=room.room_type,
 				days_count=days,
 				amount_paid=Decimal("0.00"),
+				amount_paid_by_currency={},
 				expected_amount=expected,
+				currency=currency_code,
 				check_in_date=res.expected_arrival,
 				checkout_date=res.expected_checkout,
 				status=res.status,
@@ -890,15 +1162,19 @@ async def get_daily_manifest(
 	reserved_count = len(res_rows)
 	total_guests_count = len(items)
 	# Method B: Total successful payments received strictly on the target date (Cashier Drawer)
-	daily_pmt_stmt = select(func.coalesce(func.sum(Payment.amount), Decimal("0.00"))).where(
+	daily_pmt_stmt = select(Payment.currency, func.coalesce(func.sum(Payment.amount), Decimal("0.00"))).where(
 		Payment.status == PaymentStatus.SUCCESS.value,
 		Payment.created_at >= start_dt,
 		Payment.created_at <= end_dt,
-	)
+	).group_by(Payment.currency)
 	if property_id is not None:
 		daily_pmt_stmt = daily_pmt_stmt.where(Payment.property_id == property_id)
 	daily_pmt_res = await session.execute(daily_pmt_stmt)
-	total_amount_paid = Decimal(str(daily_pmt_res.scalar() or "0.00"))
+	total_amount_paid_by_currency = {
+		currency_code: Decimal(str(amount or "0.00"))
+		for currency_code, amount in daily_pmt_res.all()
+	}
+	total_amount_paid = sum(total_amount_paid_by_currency.values(), Decimal("0.00"))
 
 	return DailyManifestReport(
 		target_date=target_date.isoformat(),
@@ -908,5 +1184,6 @@ async def get_daily_manifest(
 		occupied_count=occupied_count,
 		reserved_count=reserved_count,
 		total_amount_paid=total_amount_paid,
+		total_amount_paid_by_currency=total_amount_paid_by_currency,
 		items=items,
 	)

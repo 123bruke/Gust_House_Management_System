@@ -135,6 +135,9 @@ async def extend_stay(
 	room = await session.get(Room, stay.room_id)
 	if room is None:
 		raise ResourceNotFoundError("Room not found")
+	property_record = await session.get(Property, stay.property_id)
+	if property_record is None:
+		raise ResourceNotFoundError("Property not found")
 	from app.services.payment import add_charge_record
 	from app.models.payment import Payment, PaymentStatus
 
@@ -173,6 +176,7 @@ async def extend_stay(
 			property_id=stay.property_id,
 			stay_id=stay.id,
 			amount=extension_charge,
+			currency=property_record.currency.strip().upper(),
 			payment_method=pay_method_val,
 			status=PaymentStatus.SUCCESS.value,
 			reference=payment_ref,
@@ -236,6 +240,9 @@ async def void_check_in(
 		raise ResourceNotFoundError("Reservation not found")
 	if room is None:
 		raise ResourceNotFoundError("Room not found")
+	property_record = await session.get(Property, stay.property_id)
+	if property_record is None:
+		raise ResourceNotFoundError("Property not found")
 
 	# Update stay
 	stay.status = StayStatus.VOIDED.value
@@ -268,7 +275,14 @@ async def void_check_in(
 		.scalars()
 		.all()
 	)
-	total_paid = sum((Decimal(str(p.amount)) for p in successful_payments), Decimal("0.00"))
+	total_paid = sum(
+		(
+			Decimal(str(p.amount))
+			for p in successful_payments
+			if p.currency.strip().upper() == property_record.currency.strip().upper()
+		),
+		Decimal("0.00"),
+	)
 
 	# Remove existing room charges so no open debt remains
 	charges = list(
@@ -289,7 +303,7 @@ async def void_check_in(
 		if ref_method_str == "OTHER" and refund_bank_name:
 			ref_method_str = f"OTHER ({refund_bank_name})"
 		p.reference = (
-			f"{p.reference or ''} [REFUNDED on void check-in: {refund_amt:,.2f} ETB via {ref_method_str}]"
+			f"{p.reference or ''} [REFUNDED on void check-in: {p.amount:,.2f} {p.currency} via {ref_method_str}]"
 		).strip()
 
 	# If guest house retains a fee (cancellation / cleaning fee)
@@ -309,6 +323,7 @@ async def void_check_in(
 			property_id=stay.property_id,
 			stay_id=stay.id,
 			amount=retained_fee,
+			currency=property_record.currency.strip().upper(),
 			payment_method=successful_payments[0].payment_method if successful_payments else PaymentMethod.CASH.value,
 			status=PaymentStatus.SUCCESS.value,
 			reference=f"Retained cancellation fee for voided check-in #{stay.id}",
@@ -332,4 +347,3 @@ async def void_check_in(
 	await session.commit()
 	await session.refresh(stay)
 	return stay
-

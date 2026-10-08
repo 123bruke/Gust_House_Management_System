@@ -77,16 +77,16 @@ export function Modal({
 
       {/* Modal Card */}
       <div
-        className={`relative w-full ${maxWidthStyles} bg-white rounded-2xl border border-[#DDDDDD] shadow-[0_16px_48px_rgba(0,0,0,0.2)] p-4 sm:p-6 z-10 animate-fade-in my-auto max-h-[92vh] overflow-y-auto`}
+        className={`relative w-full ${maxWidthStyles} bg-[var(--surface)] text-[var(--ink)] rounded-2xl border border-[var(--line)] shadow-[0_16px_48px_rgba(0,0,0,0.2)] p-4 sm:p-6 z-10 animate-fade-in my-auto max-h-[92vh] overflow-y-auto`}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#F0F0F0]">
+        <div className="flex items-start justify-between gap-4 pb-4 border-b border-[var(--line-faint)]">
           <div>
-            <h3 id="modal-title" className="text-lg font-semibold text-[#222222]">
+            <h3 id="modal-title" className="text-lg font-semibold text-[var(--ink)]">
               {title}
             </h3>
             {description && (
-              <p className="text-xs text-[#717171] mt-1">
+              <p className="text-xs text-[var(--ink-muted)] mt-1">
                 {description}
               </p>
             )}
@@ -106,7 +106,7 @@ export function Modal({
 
         {/* Footer */}
         {footer && (
-          <div className="pt-4 border-t border-[#F0F0F0] flex items-center justify-end gap-3">
+          <div className="pt-4 border-t border-[var(--line-faint)] flex items-center justify-end gap-3">
             {footer}
           </div>
         )}

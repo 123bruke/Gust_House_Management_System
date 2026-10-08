@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { getCurrentUser, login as loginRequest } from '../api/auth'
 import { clearSession, getApiError, TOKEN_KEY } from '../api/client'
 import { AuthContext } from './auth-context'
-import type { User } from '../types/api'
+import type { Role, User } from '../types/api'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -13,9 +13,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getCurrentUser().then(setUser).catch(() => { clearSession(); setUser(null) }).finally(() => setIsLoading(false))
   }, [])
 
-  async function login(username: string, password: string) {
+  async function login(username: string, password: string, role: Role) {
     try {
-      const response = await loginRequest(username, password)
+      const response = await loginRequest(username, password, role)
       localStorage.setItem(TOKEN_KEY, response.access_token)
       setUser(await getCurrentUser())
     } catch (error) {

@@ -1,14 +1,17 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DailyReport(BaseModel):
 	date: str
 	todays_income: Decimal
+	todays_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	todays_expenses: Decimal
+	todays_expenses_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	net_income: Decimal
+	net_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	occupied_rooms: int
 	available_rooms: int
 	expected_rooms: int
@@ -17,13 +20,17 @@ class DailyReport(BaseModel):
 	check_ins_count: int
 	check_outs_count: int
 	penalties_total: Decimal
+	penalties_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	outstanding_credit: Decimal
+	outstanding_credit_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class PaymentMethodIncome(BaseModel):
 	method: str
 	amount: Decimal
 	count: int
+	amount_by_currency: dict[str, Decimal] = Field(default_factory=dict)
+	percentage_by_currency: dict[str, float] = Field(default_factory=dict)
 
 
 class IncomeAnalysisReport(BaseModel):
@@ -32,12 +39,15 @@ class IncomeAnalysisReport(BaseModel):
 	end_date: datetime
 	by_method: list[PaymentMethodIncome]
 	total_income: Decimal
+	total_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class ExpenseCategoryItem(BaseModel):
 	category: str
 	amount: Decimal
 	percentage: float
+	amount_by_currency: dict[str, Decimal] = Field(default_factory=dict)
+	percentage_by_currency: dict[str, float] = Field(default_factory=dict)
 
 
 class ExpenseAnalysisReport(BaseModel):
@@ -46,14 +56,18 @@ class ExpenseAnalysisReport(BaseModel):
 	end_date: datetime
 	by_category: list[ExpenseCategoryItem]
 	total_expenses: Decimal
+	total_expenses_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class DaySummary(BaseModel):
 	day: str
 	date: str
 	income: Decimal
+	income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	expense: Decimal
+	expense_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	net: Decimal
+	net_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class WeeklyReport(BaseModel):
@@ -61,19 +75,28 @@ class WeeklyReport(BaseModel):
 	end_date: str
 	days: list[DaySummary]
 	total_income: Decimal
+	total_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	total_expense: Decimal
+	total_expense_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	net_income: Decimal
+	net_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class MonthlyReport(BaseModel):
 	month: str
 	total_income: Decimal
+	total_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	total_expenses: Decimal
+	total_expenses_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	net_income: Decimal
+	net_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	total_guests: int
 	average_daily_income: Decimal
+	average_daily_income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	total_credit: Decimal
+	total_credit_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	total_penalties: Decimal
+	total_penalties_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	occupancy_rate: float
 	days: list[DaySummary] = []
 
@@ -85,18 +108,23 @@ class FinanceBucket(BaseModel):
 	expenses: Decimal
 	net: Decimal
 	transaction_count: int
+	income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
+	expenses_by_currency: dict[str, Decimal] = Field(default_factory=dict)
+	net_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class FinanceSource(BaseModel):
 	name: str
 	amount: Decimal
 	count: int
+	amount_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class FinanceTransaction(BaseModel):
 	id: int
 	occurred_at: datetime
 	amount: Decimal
+	currency: str
 	source: str
 	guest_name: str
 	room_number: str
@@ -116,6 +144,9 @@ class FinanceReport(BaseModel):
 	transaction_count: int
 	transactions_truncated: bool
 	updated_at: datetime
+	income_by_currency: dict[str, Decimal] = Field(default_factory=dict)
+	expenses_by_currency: dict[str, Decimal] = Field(default_factory=dict)
+	net_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class DailyManifestItem(BaseModel):
@@ -130,7 +161,9 @@ class DailyManifestItem(BaseModel):
 	room_type: str | None = None
 	days_count: int
 	amount_paid: Decimal
+	amount_paid_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	expected_amount: Decimal
+	currency: str = "ETB"
 	check_in_date: datetime | None = None
 	checkout_date: datetime | None = None
 	status: str
@@ -145,4 +178,5 @@ class DailyManifestReport(BaseModel):
 	occupied_count: int = 0
 	reserved_count: int
 	total_amount_paid: Decimal
+	total_amount_paid_by_currency: dict[str, Decimal] = Field(default_factory=dict)
 	items: list[DailyManifestItem] = []

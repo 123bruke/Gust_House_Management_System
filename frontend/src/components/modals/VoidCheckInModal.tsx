@@ -8,7 +8,6 @@ import {
   DoorOpen,
   Info,
   Loader2,
-  Sparkles,
   Undo2,
   XCircle,
 } from '../common/MaterialIcon'
@@ -241,7 +240,7 @@ export function VoidCheckInModal({
                     : 'bg-neutral-100 text-neutral-500'
                 }`}
               >
-                <Sparkles size={16} />
+                <Info size={16} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">

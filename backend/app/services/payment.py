@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit_log import AuditLog
 from app.models.charge import Charge, ChargeType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
+from app.models.property import Property
 from app.models.stay import Stay, StayStatus
 from app.repositories.charge import ChargeRepository
 from app.repositories.payment import PaymentRepository
@@ -35,11 +36,23 @@ async def get_stay_or_error(session: AsyncSession, stay_id: int) -> Stay:
 	return stay
 
 
-async def financial_summary(session: AsyncSession, stay_id: int) -> dict[str, Decimal | int]:
-	await get_stay_or_error(session, stay_id)
+async def financial_summary(session: AsyncSession, stay_id: int) -> dict:
+	stay = await get_stay_or_error(session, stay_id)
+	property_record = await session.get(Property, stay.property_id)
+	if property_record is None:
+		raise FinancialNotFoundError("Property not found")
+	property_currency = property_record.currency.strip().upper()
+	payments_by_currency = await PaymentRepository(session).successful_totals_by_currency_for_stay(stay_id)
 	total_due = await ChargeRepository(session).total_for_stay(stay_id)
-	total_paid = await PaymentRepository(session).successful_total_for_stay(stay_id)
-	return {"stay_id": stay_id, "total_due": total_due, "total_paid": total_paid, "balance": total_due - total_paid}
+	total_paid = payments_by_currency.get(property_currency, Decimal("0.00"))
+	return {
+		"stay_id": stay_id,
+		"total_due": total_due,
+		"total_paid": total_paid,
+		"balance": total_due - total_paid,
+		"currency": property_currency,
+		"payments_by_currency": payments_by_currency,
+	}
 
 
 async def add_charge_record(
@@ -86,7 +99,8 @@ async def create_charge(
 
 
 async def create_manual_payment(
-	session: AsyncSession, *, stay_id: int, user_id: int, amount: Decimal, payment_method: PaymentMethod, reference: str | None
+	session: AsyncSession, *, stay_id: int, user_id: int, amount: Decimal, payment_method: PaymentMethod,
+	reference: str | None, currency: str | None = None,
 ) -> Payment:
 	if payment_method not in {
 		PaymentMethod.CASH,
@@ -104,13 +118,22 @@ async def create_manual_payment(
 		raise FinancialNotFoundError("Stay not found")
 	if stay.status not in {StayStatus.CHECKED_IN.value, StayStatus.CHECKED_OUT.value}:
 		raise FinancialConflictError("Stay is not valid for payment")
-	current = await financial_summary(session, stay_id)
-	if amount > current["balance"]:
-		raise FinancialConflictError("Payment exceeds outstanding balance")
+	property_record = await session.get(Property, stay.property_id)
+	if property_record is None:
+		raise FinancialNotFoundError("Property not found")
+	property_currency = property_record.currency.strip().upper()
+	payment_currency = (currency or property_currency).strip().upper()
+	if payment_currency not in {property_currency, "USD"}:
+		raise FinancialConflictError("Payment currency must match the property currency or be USD")
+	if payment_currency == property_currency:
+		current = await financial_summary(session, stay_id)
+		if amount > current["balance"]:
+			raise FinancialConflictError("Payment exceeds outstanding balance")
 	payment = Payment(
 		property_id=stay.property_id,
 		stay_id=stay_id,
 		amount=amount,
+		currency=payment_currency,
 		payment_method=payment_method.value,
 		status=PaymentStatus.SUCCESS.value,
 		reference=reference,

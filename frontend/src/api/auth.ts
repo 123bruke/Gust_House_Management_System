@@ -4,11 +4,12 @@ import type {
   LoginResponse,
   PasswordChangeResponse,
   PublicChangePasswordPayload,
+  Role,
   User,
 } from '../types/api'
 
-export async function login(username: string, password: string) {
-  const { data } = await api.post<LoginResponse>('/auth/login', { username, password })
+export async function login(username: string, password: string, role: Role) {
+  const { data } = await api.post<LoginResponse>('/auth/login', { username, password, role })
   return data
 }
 

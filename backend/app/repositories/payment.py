@@ -27,6 +27,20 @@ class PaymentRepository:
 		)
 		return Decimal(str(result.scalar_one())).quantize(Decimal("0.01"))
 
+	async def successful_totals_by_currency_for_stay(self, stay_id: int) -> dict[str, Decimal]:
+		result = await self.session.execute(
+			select(Payment.currency, func.sum(Payment.amount))
+			.where(
+				Payment.stay_id == stay_id,
+				Payment.status == PaymentStatus.SUCCESS.value,
+			)
+			.group_by(Payment.currency)
+		)
+		return {
+			currency: Decimal(str(amount)).quantize(Decimal("0.01"))
+			for currency, amount in result.all()
+		}
+
 	async def add(self, payment: Payment) -> Payment:
 		self.session.add(payment)
 		await self.session.flush()

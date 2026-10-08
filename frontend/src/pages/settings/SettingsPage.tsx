@@ -27,7 +27,7 @@ import type { SettingsData, User } from '../../types/api'
 
 export function SettingsPage() {
   const { user } = useAuth()
-  const { t, currency: currencyLabel } = useI18n()
+  const { t } = useI18n()
   const isAdmin = user?.role === 'ADMIN'
 
   const [_settings, setSettings] = useState<SettingsData | null>(null)
@@ -153,15 +153,20 @@ export function SettingsPage() {
       )}
 
       {/* Settings Form */}
-      <form onSubmit={handleSave} className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-xs space-y-6">
+      <form onSubmit={handleSave} className="space-y-4">
         {/* Property Profile & Info */}
-        <div className="border-b border-neutral-200 pb-6 space-y-4">
+        <section
+          aria-labelledby="property-info-heading"
+          className="rounded-2xl border border-blue-100 bg-blue-50/30 p-5 shadow-xs sm:p-6 space-y-4"
+        >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
               <Building2 size={20} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-neutral-900">{t('settings.propertyInfo')}</h3>
+              <h3 id="property-info-heading" className="text-base font-bold text-neutral-900">
+                {t('settings.propertyInfo')}
+              </h3>
               <p className="text-xs text-neutral-500">
                 {t('settings.propertyInfoSub')}
               </p>
@@ -228,85 +233,96 @@ export function SettingsPage() {
               />
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Checkout Deadline Policy */}
-        <div className="flex items-center justify-between border-b border-neutral-200 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-neutral-800">
-              <Clock size={20} />
+        <section
+          aria-labelledby="checkout-policy-heading"
+          className="rounded-2xl border border-rose-100 bg-rose-50/20 p-5 shadow-xs sm:p-6 space-y-4"
+        >
+          <div className="flex flex-col gap-3 border-b border-rose-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-700">
+                <Clock size={20} />
+              </div>
+              <div>
+                <h3 id="checkout-policy-heading" className="text-base font-bold text-neutral-900">
+                  {t('settings.penaltyRule')}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {t('settings.penaltyRuleSub')}
+                </p>
+              </div>
             </div>
+            <span className="self-start rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700 sm:self-auto">
+              {t('settings.activeRule', { time: formatDeadline(deadlineHour, deadlineMinute) })}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <h3 className="text-base font-bold text-neutral-900">{t('settings.penaltyRule')}</h3>
-              <p className="text-xs text-neutral-500">
-                {t('settings.penaltyRuleSub')}
+              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
+                {t('settings.deadlineHour')}
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="23"
+                required
+                disabled={!isAdmin || loading}
+                value={deadlineHour}
+                onChange={(e) => setDeadlineHour(Number(e.target.value))}
+                className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C] disabled:bg-neutral-100"
+              />
+              <p className="text-[11px] text-neutral-400 mt-1">
+                {t('settings.deadlineHourHelper')}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
+                {t('settings.deadlineMinute')}
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                required
+                disabled={!isAdmin || loading}
+                value={deadlineMinute}
+                onChange={(e) => setDeadlineMinute(Number(e.target.value))}
+                className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C] disabled:bg-neutral-100"
+              />
+              <p className="text-[11px] text-neutral-400 mt-1">
+                {t('settings.deadlineMinuteHelper')}
               </p>
             </div>
           </div>
-          <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#FF385C]/10 text-[#FF385C]">
-            {t('settings.activeRule', { time: formatDeadline(deadlineHour, deadlineMinute) })}
-          </span>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
-              {t('settings.deadlineHour')}
+              {t('settings.latePenalty', { currency: currency.trim() || 'ETB' })}
             </label>
-            <input
-              type="number"
-              min="0"
-              max="23"
-              required
-              disabled={!isAdmin || loading}
-              value={deadlineHour}
-              onChange={(e) => setDeadlineHour(Number(e.target.value))}
-              className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C] disabled:bg-neutral-100"
-            />
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                required
+                disabled={!isAdmin || loading}
+                value={penalty}
+                onChange={(e) => setPenalty(e.target.value)}
+                className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C] disabled:bg-neutral-100"
+              />
+              <span className="absolute right-3.5 top-2.5 text-xs font-bold text-neutral-400">
+                {currency.trim() || 'ETB'}
+              </span>
+            </div>
             <p className="text-[11px] text-neutral-400 mt-1">
-              {t('settings.deadlineHourHelper')}
+              {t('settings.penaltyHelper')}
             </p>
           </div>
-
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
-              {t('settings.deadlineMinute')}
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="59"
-              required
-              disabled={!isAdmin || loading}
-              value={deadlineMinute}
-              onChange={(e) => setDeadlineMinute(Number(e.target.value))}
-              className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C] disabled:bg-neutral-100"
-            />
-            <p className="text-[11px] text-neutral-400 mt-1">{t('settings.deadlineMinuteHelper')}</p>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-600 mb-1.5">
-            {t('settings.latePenalty')}
-          </label>
-          <div className="relative">
-            <input
-              type="number"
-              min="0"
-              step="1"
-              required
-              disabled={!isAdmin || loading}
-              value={penalty}
-              onChange={(e) => setPenalty(e.target.value)}
-              className="w-full rounded-xl border border-neutral-200 px-3.5 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#FF385C] disabled:bg-neutral-100"
-            />
-            <span className="absolute right-3.5 top-2.5 text-xs font-bold text-neutral-400">{currencyLabel}</span>
-          </div>
-          <p className="text-[11px] text-neutral-400 mt-1">
-            {t('settings.penaltyHelper')}
-          </p>
-        </div>
+        </section>
 
         {isAdmin ? (
           <div className="flex justify-end pt-2">

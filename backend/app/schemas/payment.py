@@ -8,6 +8,7 @@ from app.models.payment import PaymentMethod, PaymentStatus
 
 class ManualPaymentCreate(BaseModel):
 	amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+	currency: str | None = Field(default=None, min_length=3, max_length=10)
 	payment_method: PaymentMethod
 	reference: str | None = Field(default=None, max_length=200)
 
@@ -18,6 +19,7 @@ class PaymentRead(BaseModel):
 	id: int
 	stay_id: int
 	amount: Decimal
+	currency: str
 	payment_method: PaymentMethod
 	status: PaymentStatus
 	reference: str | None

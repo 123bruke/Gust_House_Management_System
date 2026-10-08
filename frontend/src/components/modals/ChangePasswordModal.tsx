@@ -15,7 +15,6 @@ interface ChangePasswordModalProps {
 
 export function ChangePasswordModal({ user, adminReset = false, onClose, onSaved }: ChangePasswordModalProps) {
   const { t } = useI18n()
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [showPasswords, setShowPasswords] = useState(false)
@@ -33,7 +32,7 @@ export function ChangePasswordModal({ user, adminReset = false, onClose, onSaved
     try {
       const updated = adminReset
         ? await resetUserPassword(user.id, newPassword)
-        : await changeOwnPassword(currentPassword, newPassword)
+        : await changeOwnPassword(newPassword)
       onSaved?.(updated)
       onClose()
     } catch (requestError) {
@@ -58,12 +57,6 @@ export function ChangePasswordModal({ user, adminReset = false, onClose, onSaved
         </div>
 
         <div className="mt-6 space-y-4">
-          {!adminReset && (
-            <label className="block text-sm font-medium text-[#222222]">
-              {t('password.current')}
-              <input required type={showPasswords ? 'text' : 'password'} value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#DDDDDD] px-3.5 py-2.5 focus:border-[#FF385C] focus:outline-none focus:ring-2 focus:ring-[#FF385C]/20" autoComplete="current-password" />
-            </label>
-          )}
           <label className="block text-sm font-medium text-[#222222]">
             {t('password.new')}
             <input required minLength={6} maxLength={128} type={showPasswords ? 'text' : 'password'} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1.5 w-full rounded-xl border border-[#DDDDDD] px-3.5 py-2.5 focus:border-[#FF385C] focus:outline-none focus:ring-2 focus:ring-[#FF385C]/20" autoComplete="new-password" />

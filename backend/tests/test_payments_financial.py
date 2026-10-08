@@ -38,11 +38,13 @@ async def create_checked_in_stay(client: AsyncClient, token: str) -> tuple[int, 
 			  "expected_arrival": arrival.isoformat(), "expected_checkout": (arrival + timedelta(days=1)).isoformat()},
 	)
 	assert reservation.status_code == 201
+	reception_token = await token_for(client, "reception")
 	check_in = await client.post(
-		f"/api/v1/reservations/{reservation.json()['id']}/check-in", headers=auth(token)
+		f"/api/v1/reservations/{reservation.json()['id']}/check-in",
+		headers=auth(reception_token),
 	)
 	assert check_in.status_code == 200
-	stay_id = (await client.get("/api/v1/stays", headers=auth(token))).json()[0]["id"]
+	stay_id = (await client.get("/api/v1/stays", headers=auth(reception_token))).json()[0]["id"]
 	return stay_id, room.json()["id"]
 
 
@@ -75,12 +77,87 @@ async def test_extension_and_manual_payment_balance(client: AsyncClient, users) 
 	)
 	assert payment.status_code == 201
 	summary = (await client.get(f"/api/v1/stays/{stay_id}/financial-summary", headers=auth(token))).json()
-	assert summary == {"stay_id": stay_id, "total_due": "2000.00", "total_paid": "500.00", "balance": "1500.00"}
+	assert summary["stay_id"] == stay_id
+	assert summary["total_due"] == "2000.00"
+	assert summary["total_paid"] == "500.00"
+	assert summary["balance"] == "1500.00"
+	assert summary["currency"] == "ETB"
+	assert summary["payments_by_currency"] == {"ETB": "500.00"}
 	overpayment = await client.post(
 		f"/api/v1/stays/{stay_id}/payments", headers=auth(token),
 		json={"amount": "1501.00", "payment_method": "CASH"},
 	)
 	assert overpayment.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_usd_payment_is_tracked_separately_from_property_balance(client: AsyncClient, users) -> None:
+	token = await token_for(client)
+	stay_id, _ = await create_checked_in_stay(client, token)
+	target_date = datetime.now(timezone.utc).date().isoformat()
+	response = await client.post(
+		f"/api/v1/stays/{stay_id}/payments",
+		headers=auth(token),
+		json={"amount": "75.25", "currency": "USD", "payment_method": "CASH"},
+	)
+	assert response.status_code == 201
+	assert response.json()["currency"] == "USD"
+	summary = (
+		await client.get(f"/api/v1/stays/{stay_id}/financial-summary", headers=auth(token))
+	).json()
+	assert summary["total_paid"] == "0.00"
+	assert summary["balance"] == "1000.00"
+	assert summary["payments_by_currency"] == {"USD": "75.25"}
+
+	daily = await client.get(
+		"/api/v1/reports/daily",
+		headers=auth(token),
+		params={"target_date": target_date},
+	)
+	assert daily.status_code == 200
+	assert daily.json()["todays_income_by_currency"] == {"USD": "75.25"}
+	assert daily.json()["net_income_by_currency"] == {"USD": "75.25"}
+
+	income = await client.get(
+		"/api/v1/reports/income-analysis",
+		headers=auth(token),
+		params={"period": "this_month"},
+	)
+	assert income.status_code == 200
+	assert income.json()["total_income_by_currency"] == {"USD": "75.25"}
+	assert income.json()["by_method"][0]["amount_by_currency"] == {"USD": "75.25"}
+
+	weekly = await client.get(
+		"/api/v1/reports/weekly",
+		headers=auth(token),
+		params={"target_date": target_date},
+	)
+	assert weekly.status_code == 200
+	assert weekly.json()["total_income_by_currency"] == {"USD": "75.25"}
+	assert weekly.json()["days"][-1]["income_by_currency"] == {"USD": "75.25"}
+
+	monthly = await client.get(
+		"/api/v1/reports/monthly",
+		headers=auth(token),
+		params={"year": datetime.now(timezone.utc).year, "month": datetime.now(timezone.utc).month},
+	)
+	assert monthly.status_code == 200
+	assert monthly.json()["total_income_by_currency"] == {"USD": "75.25"}
+
+	manifest = await client.get(
+		"/api/v1/reports/daily-manifest",
+		headers=auth(token),
+		params={"target_date": target_date},
+	)
+	assert manifest.status_code == 200
+	assert manifest.json()["total_amount_paid_by_currency"] == {"USD": "75.25"}
+
+	unsupported_currency = await client.post(
+		f"/api/v1/stays/{stay_id}/payments",
+		headers=auth(token),
+		json={"amount": "20.00", "currency": "EUR", "payment_method": "CASH"},
+	)
+	assert unsupported_currency.status_code == 409
 
 
 @pytest.mark.asyncio
