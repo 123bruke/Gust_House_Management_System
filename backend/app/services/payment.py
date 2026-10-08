@@ -100,7 +100,7 @@ async def create_charge(
 
 async def create_manual_payment(
 	session: AsyncSession, *, stay_id: int, user_id: int, amount: Decimal, payment_method: PaymentMethod,
-	reference: str | None, currency: str | None = None,
+	reference: str | None, currency: str | None = None, exchange_rate: Decimal | None = None,
 ) -> Payment:
 	if payment_method not in {
 		PaymentMethod.CASH,
@@ -125,6 +125,8 @@ async def create_manual_payment(
 	payment_currency = (currency or property_currency).strip().upper()
 	if payment_currency not in {property_currency, "USD"}:
 		raise FinancialConflictError("Payment currency must match the property currency or be USD")
+	if exchange_rate is not None and exchange_rate <= 0:
+		raise FinancialConflictError("Exchange rate must be positive")
 	if payment_currency == property_currency:
 		current = await financial_summary(session, stay_id)
 		if amount > current["balance"]:
@@ -134,6 +136,7 @@ async def create_manual_payment(
 		stay_id=stay_id,
 		amount=amount,
 		currency=payment_currency,
+		exchange_rate=exchange_rate,
 		payment_method=payment_method.value,
 		status=PaymentStatus.SUCCESS.value,
 		reference=reference,
