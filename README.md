@@ -148,8 +148,11 @@ npm run dev
 
 The repository-level `vercel.json` builds the Vite app in `frontend` and serves
 its output from `frontend/dist`. In Vercel, set the project Root Directory to
-the repository root and redeploy. The rewrite configuration serves the SPA
-entry point for client-side routes such as `/login` and `/dashboard`.
+the repository root (`.`), not `backend`, and redeploy. If the build log tries
+to install from `backend/frontend/package.json`, the project Root Directory is
+set to `backend`, so the frontend path in `vercel.json` is being resolved from
+the wrong directory. The rewrite configuration serves the SPA entry point for
+client-side routes such as `/login` and `/dashboard`.
 
 Vercel hosts the static frontend; it does not start the FastAPI backend or
 provide PostgreSQL. Deploy the backend and database separately using the
