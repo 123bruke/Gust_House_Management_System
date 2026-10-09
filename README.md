@@ -154,9 +154,18 @@ set to `backend`, so the frontend path in `vercel.json` is being resolved from
 the wrong directory. The rewrite configuration serves the SPA entry point for
 client-side routes such as `/login` and `/dashboard`.
 
-Vercel hosts the static frontend; it does not start the FastAPI backend or
-provide PostgreSQL. Deploy the backend and database separately using the
-repository's `render.yaml` Blueprint:
+The recommended setup uses Vercel for the static frontend and Render for the
+FastAPI backend and PostgreSQL database. To deploy the backend to Vercel
+instead, create a separate Vercel project from the same repository and set its
+Root Directory to `backend`. The `backend/vercel.json` config routes requests
+to the FastAPI app in `backend/api/index.py`, and Vercel installs Python
+packages from `backend/requirements.txt`. Add `DATABASE_URL`, `SECRET_KEY`, and
+`CORS_ORIGINS` in that Vercel project's environment variables. Do not reuse the
+frontend Vercel project's settings; its root-level `vercel.json` builds the
+Vite app and expects the Root Directory to be the repository root.
+
+For the recommended Render backend setup, deploy the backend and database
+separately using the repository's `render.yaml` Blueprint:
 
 1. Push the repository to GitHub and create a Blueprint in the Render
    dashboard using this repository.
