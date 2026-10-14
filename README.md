@@ -168,7 +168,7 @@ For the recommended Render backend setup, deploy the backend and database
 separately using the repository's `render.yaml` Blueprint:
 
 1. Push the repository to GitHub and create a Blueprint in the Render
-   dashboard using this repository.
+   dashboard using this repository.                                  
 2. Leave the API service's Root Directory blank so commands run from the
    repository root. If you created a Render Web Service manually instead of
    using the Blueprint, use Build Command
