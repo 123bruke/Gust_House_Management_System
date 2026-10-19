@@ -1,46 +1,48 @@
-# Family Guest House Management System
+# Gust Guest House Management System
 
-An internal web application for managing guest-house operations. Staff use the
-system to manage rooms, guests, reservations, stays, payments, expenses, and
-financial reports. Guests are records in the system; they do not sign in.
+A polished, production-ready internal web application for managing guest-house operations. Designed for hotel and guest-house staff, the system makes it easy to manage rooms, guests, reservations, stays, payments, expenses and generate financial reports. The UI supports English and Amharic, and includes light/dark themes.
 
-## Features
+> Note: This repository contains only the application code. Staff users sign in; guests do not have accounts.
 
-- Manage rooms, guest records, and reservations.
-- Check guests in and out, and extend stays.
-- Record payments in ETB or USD, with each currency tracked separately.
-- Record expenses and review financial summaries and income details.
-- Review audit events for account and operational changes.
-- Use the interface in English or Amharic, with light and dark themes.
 
-## Roles and sign-in
+## Key Features
 
-The application supports three staff roles:
+- Room management (types, availability, rates)
+- Guest records (personal data and stay history)
+- Reservation creation, modification and cancellation
+- Check-in / check-out flows and stay extensions
+- Payments in multiple currencies (ETB, USD) with separate tracking
+- Expense tracking and financial summaries (income reports, ledgers)
+- Audit logs for account and operational changes
+- Role-based access control: Super Admin, Admin, Receptionist
+- Bilingual UI: English and Amharic; light and dark themes
 
-- **Super Admin** manages platform-level properties and administration.
-- **Admin** manages guest-house operations and can access administrative
-  financial reports.
-- **Receptionist** handles front-desk guest, reservation, and stay operations.
 
-Staff sign in with their account username (often a phone number), password,
-and selected role. Usernames may be shared across roles, but each role uses
-its own account and password. Passwords are stored as hashes and cannot be
-viewed by other users. Signed-in users can update their own account details.
+## Roles & Authentication
 
-## Requirements
+- Super Admin: Platform-level administration and configuration
+- Admin: Operational management and finance reporting
+- Receptionist: Front-desk operations (reservations, check-ins, payments)
 
-- Python 3.11
-- Node.js and npm
-- PostgreSQL
+Staff sign in using their account username (commonly a phone number), password, and selected role. Usernames may be reused across roles but each role has a separate account and password. Passwords are stored securely as hashes.
 
-## Local development
 
-### 1. Configure the backend
+## Tech Stack
 
-Create a PostgreSQL database, then open PowerShell in the repository's
-`backend` directory:
+- Backend: Python 3.11, FastAPI
+- Frontend: Vite + React (or your chosen framework) — served from `frontend`
+- Database: PostgreSQL
+- Dev tooling: Alembic for migrations, Uvicorn for local API server
+
+
+## Quick Start — Development (Windows PowerShell)
+
+1. Clone the repository and open PowerShell in the repo root.
+
+2. Backend setup
 
 ```powershell
+cd backend
 py -3.11 -m venv .venv311
 .\.venv311\Scripts\python.exe -m pip install --upgrade pip
 .\.venv311\Scripts\python.exe -m pip install -r requirements.txt
@@ -48,84 +50,59 @@ if (-not (Test-Path .env)) { Copy-Item ..\.env.example .env }
 notepad .env
 ```
 
-Set `DATABASE_URL` to a PostgreSQL connection string for your database, and
-replace `SECRET_KEY` with a long, random value. Keep `.env` private and do not
-commit it.
+- Set DATABASE_URL to your PostgreSQL connection string and set a strong SECRET_KEY in `backend/.env`.
 
-Apply database migrations and create the first administrator. The password
-will be entered interactively and will not appear on screen:
+3. Apply database migrations and create an administrator (password is prompted securely):
 
 ```powershell
 .\.venv311\Scripts\python.exe -m alembic upgrade head
-.\.venv311\Scripts\python.exe -m app.cli create-admin --phone-number 0908296773 --full-name "System Administrator"
+.\.venv311\Scripts\python.exe -m app.cli create-admin --phone-number +251900000000 --full-name "System Administrator"
 ```
 
-The `create-admin` command only bootstraps an administrator if no users exist.
-Choose the phone number and password for your deployment; the example number
-above is not a default credential.
-
-To create a platform Super Admin, use the following command when appropriate.
-This command also prompts for a password:
+To create a platform Super Admin (if needed):
 
 ```powershell
-.\.venv311\Scripts\python.exe -m app.cli create-super-admin --phone-number 0908296774 --full-name "Platform Administrator"
+.\.venv311\Scripts\python.exe -m app.cli create-super-admin --phone-number +251900000001 --full-name "Platform Administrator"
 ```
 
-The examples use different phone numbers for clarity; choose usernames that
-fit your deployment. Create receptionist accounts through the application's
-user-management interface.
-
-Start the API from the `backend` directory:
+4. Start the API:
 
 ```powershell
 .\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-The API is available at `http://127.0.0.1:8000`; interactive API
-documentation is at `http://127.0.0.1:8000/docs`.
+API docs: http://127.0.0.1:8000/docs
 
-### 2. Start the frontend
 
-Open a second PowerShell window in the repository's `frontend` directory:
+5. Frontend setup (new PowerShell window)
 
 ```powershell
+cd frontend
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 npm install
 npm run dev
 ```
 
-The frontend's `.env.example` points to
-`http://127.0.0.1:8000/api/v1`. If you change `VITE_API_BASE_URL`, restart the
-Vite development server. The frontend is available at
-`http://localhost:3000`.
+Frontend dev server: http://localhost:3000
 
-## macOS and Linux
 
-From the repository root, create the backend environment file and install
-dependencies:
+## Quick Start — macOS / Linux
 
 ```bash
+# from repo root
 cp .env.example backend/.env
 cd backend
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-```
-
-Set `DATABASE_URL` and `SECRET_KEY` in `backend/.env`, then migrate the
-database and create the first administrator:
-
-```bash
+# set DATABASE_URL and SECRET_KEY in backend/.env
 python -m alembic upgrade head
-python -m app.cli create-admin --phone-number 0908296773 --full-name "System Administrator"
+python -m app.cli create-admin --phone-number +251900000000 --full-name "System Administrator"
 python -m uvicorn app.main:app --reload
-backend command ............. 
-Set-Location "C:\Users\FSC CORE i5\Downloads\guest-house-management-master\backend"
-.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-In a second terminal, start the frontend:
+In another terminal:
 
 ```bash
 cd frontend
@@ -134,58 +111,64 @@ npm install
 npm run dev
 ```
 
-## Production notes
 
-- Use a unique, strong `SECRET_KEY` and protect environment files and database
-  credentials.
-- Serve the frontend and API over HTTPS in production.
-- Set `CORS_ORIGINS` to the trusted frontend origin or origins; do not use a
-  wildcard for a public deployment.
-- Back up the PostgreSQL database regularly and restrict access to authorized
-  staff.
+## Environment variables
 
-### Deploying the frontend to Vercel
+Important variables (set in `backend/.env` or the deployment environment):
 
-The repository-level `vercel.json` builds the Vite app in `frontend` and serves
-its output from `frontend/dist`. In Vercel, set the project Root Directory to
-the repository root (`.`), not `backend`, and redeploy. If the build log tries
-to install from `backend/frontend/package.json`, the project Root Directory is
-set to `backend`, so the frontend path in `vercel.json` is being resolved from
-the wrong directory. The rewrite configuration serves the SPA entry point for
-client-side routes such as `/login` and `/dashboard`.
+- DATABASE_URL — PostgreSQL connection string
+- SECRET_KEY — long random secret for session/crypto
+- CORS_ORIGINS — allowed frontend origin(s)
+- Other variables used by your deployment (see `.env.example` files)
 
-The recommended setup uses Vercel for the static frontend and Render for the
-FastAPI backend and PostgreSQL database. To deploy the backend to Vercel
-instead, create a separate Vercel project from the same repository and set its
-Root Directory to `backend`. The `backend/vercel.json` config routes requests
-to the FastAPI app in `backend/api/index.py`, and Vercel installs Python
-packages from `backend/requirements.txt`. Add `DATABASE_URL`, `SECRET_KEY`, and
-`CORS_ORIGINS` in that Vercel project's environment variables. Do not reuse the
-frontend Vercel project's settings; its root-level `vercel.json` builds the
-Vite app and expects the Root Directory to be the repository root.
 
-For the recommended Render backend setup, deploy the backend and database
-separately using the repository's `render.yaml` Blueprint:
+## Running migrations & creating users
 
-1. Push the repository to GitHub and create a Blueprint in the Render
-   dashboard using this repository.                                  
-2. Leave the API service's Root Directory blank so commands run from the
-   repository root. If you created a Render Web Service manually instead of
-   using the Blueprint, use Build Command
-   `pip install -r backend/requirements.txt && cd backend && alembic upgrade head`
-   and Start Command
-   `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
-3. Render will request `CORS_ORIGINS`. Enter the exact Vercel site origin
-   (for example, `https://your-project.vercel.app`) without a trailing slash.
-4. Wait for the API deployment to finish, then confirm
-   `https://<your-render-service>.onrender.com/health` returns `{"status":"ok"}`.
-5. In Vercel, add `VITE_API_BASE_URL` for Production and Preview environments,
-   set to `https://<your-render-service>.onrender.com/api/v1`, and redeploy the
-   frontend.
+- Migrations: `alembic upgrade head`
+- Create admin: `python -m app.cli create-admin --phone-number <phone> --full-name "Name"`
+- Create super admin: `python -m app.cli create-super-admin --phone-number <phone> --full-name "Name"`
 
-The Render Blueprint creates a paid persistent PostgreSQL database; review its
-price in Render before creating the Blueprint. The API web service uses the
-free plan, which can spin down when idle and take about a minute to wake. Change
-its plan in Render if you need consistently warm service. Production builds
-fail if `VITE_API_BASE_URL` is missing, rather than silently pointing sign-in
-requests at the visitor's own computer.
+
+## Production & Deployment Notes
+
+- Use a strong, unique SECRET_KEY and do not commit `.env` files.
+- Serve frontend and backend over HTTPS in production.
+- Configure CORS_ORIGINS to exactly the frontend origin — do not use `*`.
+- Regularly back up your PostgreSQL database and restrict access.
+
+Recommended hosting setup:
+- Frontend: Vercel (set Project Root to the repository root `.` so `vercel.json` builds `frontend` correctly)
+- Backend: Render (use the provided `render.yaml` Blueprint or follow the Render instructions in this README)
+
+If deploying both on Vercel, create a separate Vercel project for the backend and set its Root Directory to `backend`.
+
+
+## Troubleshooting
+
+- If Vercel is trying to install dependencies from `backend/frontend/package.json`, the Vercel project Root Directory is likely set to `backend` instead of the repository root — set it to `.` for the static frontend project.
+- Check `https://<your-render-service>.onrender.com/health` to confirm API health; it should return `{"status":"ok"}`.
+- Production builds will fail if `VITE_API_BASE_URL` is missing.
+
+
+## Contributing
+
+Contributions are welcome. Please open issues for bugs or feature requests, and create pull requests for fixes. Follow these guidelines:
+
+- Write clear, focused PRs with a description of the change and motivation
+- Run tests and linters before submitting
+- Keep environment secrets out of commits
+
+
+## License
+
+This project does not include a license file. Add a license (MIT, Apache-2.0, etc.) if you intend to make the project open source.
+
+
+## Contact
+
+If you need help or want to collaborate, open an issue or contact the repository owner.
+
+
+---
+
+Thank you for using Gust Guest House Management System — built to make guest-house operations simple, auditable and multilingual.
