@@ -1,0 +1,87 @@
+<svg width="1400" height="900" viewBox="0 0 1400 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#1f2937"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="900" fill="url(#bg2)"/>
+  <rect x="40" y="40" width="1320" height="820" rx="22" fill="#0f172a" stroke="#334155"/>
+  <rect x="70" y="70" width="1260" height="70" rx="14" fill="#111827"/>
+  <text x="100" y="112" font-size="30" font-family="Arial, sans-serif" fill="#f8fafc">Guest & Reservation Management</text>
+
+  <rect x="90" y="180" width="500" height="580" rx="18" fill="#111827" stroke="#334155"/>
+  <text x="120" y="220" font-size="22" font-family="Arial, sans-serif" fill="#e2e8f0">Guest Directory</text>
+  <g font-family="Arial, sans-serif" font-size="16" fill="#cbd5e1">
+    <rect x="120" y="245" width="440" height="42" rx="10" fill="#1e293b"/>
+    <text x="140" y="272">Owen Smith</text>
+    <text x="340" y="272">Room 202</text>
+    <text x="470" y="272">Checked In</text>
+
+    <rect x="120" y="305" width="440" height="42" rx="10" fill="#1e293b"/>
+    <text x="140" y="332">Maya Patel</text>
+    <text x="340" y="332">Room 101</text>
+    <text x="470" y="332">Waiting</text>
+
+    <rect x="120" y="365" width="440" height="42" rx="10" fill="#1e293b"/>
+    <text x="140" y="392">Daniel Ross</text>
+    <text x="340" y="392">Room 410</text>
+    <text x="470" y="392">Reserved</text>
+
+    <rect x="120" y="425" width="440" height="42" rx="10" fill="#1e293b"/>
+    <text x="140" y="452">Leila Khan</text>
+    <text x="340" y="452">Room 305</text>
+    <text x="470" y="452">Checked Out</text>
+
+    <rect x="120" y="485" width="440" height="42" rx="10" fill="#1e293b"/>
+    <text x="140" y="512">Zane Turner</text>
+    <text x="340" y="512">Room 118</text>
+    <text x="470" y="512">Late Check-in</text>
+  </g>
+
+  <rect x="660" y="180" width="640" height="580" rx="18" fill="#111827" stroke="#334155"/>
+  <text x="690" y="220" font-size="22" font-family="Arial, sans-serif" fill="#e2e8f0">Reservation Calendar</text>
+  <g font-family="Arial, sans-serif" font-size="15" fill="#cbd5e1">
+    <text x="700" y="265">Tue</text>
+    <text x="760" y="265">Wed</text>
+    <text x="820" y="265">Thu</text>
+    <text x="880" y="265">Fri</text>
+    <text x="940" y="265">Sat</text>
+    <text x="1000" y="265">Sun</text>
+    <text x="1060" y="265">Mon</text>
+
+    <rect x="700" y="290" width="55" height="55" rx="12" fill="#1e293b"/>
+    <text x="718" y="325">App.</text>
+
+    <rect x="765" y="290" width="55" height="55" rx="12" fill="#1e293b"/>
+    <text x="782" y="325">2</text>
+
+    <rect x="830" y="290" width="55" height="55" rx="12" fill="#14532d"/>
+    <text x="848" y="325">5</text>
+
+    <rect x="895" y="290" width="55" height="55" rx="12" fill="#1d4ed8"/>
+    <text x="912" y="325">7</text>
+
+    <rect x="960" y="290" width="55" height="55" rx="12" fill="#7c2d12"/>
+    <text x="975" y="325">8</text>
+
+    <rect x="1025" y="290" width="55" height="55" rx="12" fill="#1e293b"/>
+    <text x="1041" y="325">9</text>
+
+    <rect x="1090" y="290" width="55" height="55" rx="12" fill="#1e293b"/>
+    <text x="1108" y="325">10</text>
+
+    <rect x="700" y="360" width="55" height="55" rx="12" fill="#1e293b"/>
+    <rect x="765" y="360" width="55" height="55" rx="12" fill="#14532d"/>
+    <rect x="830" y="360" width="55" height="55" rx="12" fill="#14532d"/>
+    <rect x="895" y="360" width="55" height="55" rx="12" fill="#1e293b"/>
+    <rect x="960" y="360" width="55" height="55" rx="12" fill="#1d4ed8"/>
+    <rect x="1025" y="360" width="55" height="55" rx="12" fill="#1e293b"/>
+    <rect x="1090" y="360" width="55" height="55" rx="12" fill="#1e293b"/>
+
+    <rect x="700" y="430" width="445" height="120" rx="18" fill="#1e293b"/>
+    <text x="720" y="475" font-size="18" fill="#f8fafc">Upcoming Arrival</text>
+    <text x="720" y="505" font-size="28" fill="#4ade80">Maya Patel</text>
+    <text x="720" y="530" font-size="16" fill="#cbd5e1">Check-in: 14:00 | Suite 201</text>
+  </g>
+</svg>
