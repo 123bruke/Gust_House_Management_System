@@ -1,72 +1,26 @@
 <svg width="1400" height="900" viewBox="0 0 1400 900" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#020617"/>
-      <stop offset="100%" stop-color="#0f172a"/>
-    </linearGradient>
-  </defs>
+  <defs><linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#020617"/><stop offset="100%" stop-color="#0f172a"/></linearGradient></defs>
   <rect width="1400" height="900" fill="url(#bg3)"/>
   <rect x="40" y="40" width="1320" height="820" rx="22" fill="#111827" stroke="#334155"/>
-  <text x="90" y="115" font-size="30" font-family="Arial, sans-serif" fill="#f8fafc">Room & Operations Overview</text>
-
-  <g>
-    <rect x="90" y="150" width="220" height="150" rx="18" fill="#14532d"/>
-    <text x="125" y="200" font-size="18" font-family="Arial, sans-serif" fill="#dcfce7">Available</text>
-    <text x="150" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">8</text>
-  </g>
-
-  <g>
-    <rect x="340" y="150" width="220" height="150" rx="18" fill="#1d4ed8"/>
-    <text x="380" y="200" font-size="18" font-family="Arial, sans-serif" fill="#dbeafe">Occupied</text>
-    <text x="410" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">5</text>
-  </g>
-
-  <g>
-    <rect x="590" y="150" width="220" height="150" rx="18" fill="#7c2d12"/>
-    <text x="620" y="200" font-size="18" font-family="Arial, sans-serif" fill="#ffedd5">Maintenance</text>
-    <text x="675" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">2</text>
-  </g>
-
-  <g>
-    <rect x="840" y="150" width="220" height="150" rx="18" fill="#7c3aed"/>
-    <text x="875" y="200" font-size="18" font-family="Arial, sans-serif" fill="#ede9fe">Reserved</text>
-    <text x="915" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">3</text>
-  </g>
-
+  <text x="90" y="115" font-size="30" font-family="Arial, sans-serif" fill="#f8fafc">Room &amp; Operations Overview</text>
+  <g><rect x="90" y="150" width="220" height="150" rx="18" fill="#14532d"/><text x="125" y="200" font-size="18" font-family="Arial, sans-serif" fill="#dcfce7">Available</text><text x="150" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">8</text></g>
+  <g><rect x="340" y="150" width="220" height="150" rx="18" fill="#1d4ed8"/><text x="380" y="200" font-size="18" font-family="Arial, sans-serif" fill="#dbeafe">Occupied</text><text x="410" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">5</text></g>
+  <g><rect x="590" y="150" width="220" height="150" rx="18" fill="#7c2d12"/><text x="620" y="200" font-size="18" font-family="Arial, sans-serif" fill="#ffedd5">Maintenance</text><text x="675" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">2</text></g>
+  <g><rect x="840" y="150" width="220" height="150" rx="18" fill="#7c3aed"/><text x="875" y="200" font-size="18" font-family="Arial, sans-serif" fill="#ede9fe">Reserved</text><text x="915" y="250" font-size="48" font-family="Arial, sans-serif" fill="#ffffff">3</text></g>
   <rect x="90" y="340" width="970" height="430" rx="18" fill="#0f172a" stroke="#334155"/>
   <text x="120" y="383" font-size="24" font-family="Arial, sans-serif" fill="#f8fafc">Room Status Board</text>
-
   <g font-family="Arial, sans-serif" fill="#e2e8f0">
-    <rect x="120" y="410" width="220" height="120" rx="15" fill="#1e293b"/>
-    <text x="145" y="450" font-size="22">Room 101</text>
-    <text x="145" y="500" font-size="16" fill="#86efac">Available</text>
-
-    <rect x="370" y="410" width="220" height="120" rx="15" fill="#1e293b"/>
-    <text x="395" y="450" font-size="22">Room 202</text>
-    <text x="395" y="500" font-size="16" fill="#93c5fd">Occupied</text>
-
-    <rect x="620" y="410" width="220" height="120" rx="15" fill="#1e293b"/>
-    <text x="645" y="450" font-size="22">Room 305</text>
-    <text x="645" y="500" font-size="16" fill="#fbbf24">Reserved</text>
-
-    <rect x="870" y="410" width="150" height="120" rx="15" fill="#1e293b"/>
-    <text x="900" y="450" font-size="22">Room 410</text>
-    <text x="900" y="500" font-size="16" fill="#fca5a5">Cleaning</text>
+    <rect x="120" y="410" width="220" height="120" rx="15" fill="#1e293b"/><text x="145" y="450" font-size="22">Room 101</text><text x="145" y="500" font-size="16" fill="#86efac">Available</text>
+    <rect x="370" y="410" width="220" height="120" rx="15" fill="#1e293b"/><text x="395" y="450" font-size="22">Room 202</text><text x="395" y="500" font-size="16" fill="#93c5fd">Occupied</text>
+    <rect x="620" y="410" width="220" height="120" rx="15" fill="#1e293b"/><text x="645" y="450" font-size="22">Room 305</text><text x="645" y="500" font-size="16" fill="#fbbf24">Reserved</text>
+    <rect x="870" y="410" width="150" height="120" rx="15" fill="#1e293b"/><text x="900" y="450" font-size="22">Room 410</text><text x="900" y="500" font-size="16" fill="#fca5a5">Cleaning</text>
   </g>
-
   <rect x="1085" y="340" width="220" height="430" rx="18" fill="#0f172a" stroke="#334155"/>
   <text x="1115" y="383" font-size="22" font-family="Arial, sans-serif" fill="#f8fafc">Operations</text>
   <g font-family="Arial, sans-serif" fill="#cbd5e1">
-    <rect x="1115" y="420" width="160" height="45" rx="12" fill="#1d4ed8"/>
-    <text x="1140" y="450">Check-ins</text>
-
-    <rect x="1115" y="490" width="160" height="45" rx="12" fill="#14532d"/>
-    <text x="1140" y="520">Check-outs</text>
-
-    <rect x="1115" y="560" width="160" height="45" rx="12" fill="#7c2d12"/>
-    <text x="1140" y="590">Maintenance</text>
-
-    <rect x="1115" y="630" width="160" height="45" rx="12" fill="#7c3aed"/>
-    <text x="1142" y="660">Reports</text>
+    <rect x="1115" y="420" width="160" height="45" rx="12" fill="#1d4ed8"/><text x="1140" y="450">Check-ins</text>
+    <rect x="1115" y="490" width="160" height="45" rx="12" fill="#14532d"/><text x="1140" y="520">Check-outs</text>
+    <rect x="1115" y="560" width="160" height="45" rx="12" fill="#7c2d12"/><text x="1140" y="590">Maintenance</text>
+    <rect x="1115" y="630" width="160" height="45" rx="12" fill="#7c3aed"/><text x="1142" y="660">Reports</text>
   </g>
 </svg>
