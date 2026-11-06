@@ -96,17 +96,8 @@ Gust_House_Management_System/
 
 The screenshots below are UI preview mockups generated for documentation purposes to illustrate the platform experience.
 
-### Dashboard Overview
 
-![Dashboard Overview](docs/screenshots/dashboard-overview.svg)
 
-### Guest and Reservation Management
-
-![Guest and Reservation Management](docs/screenshots/guest-management.svg)
-
-### Room and Operations View
-
-![Room and Operations View](docs/screenshots/room-operations.svg)
 
 ## Feature Modules
 
